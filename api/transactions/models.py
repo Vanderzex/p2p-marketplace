@@ -1,0 +1,95 @@
+from django.db import models
+from django.conf import settings
+from items.models import Item
+
+
+class Transaction(models.Model):
+    """
+    Μοντέλο που αναπαριστά μια συναλλαγή (ανταλλαγή ή δανεισμό)
+    μεταξύ δύο χρηστών για ένα συγκεκριμένο αντικείμενο.
+    """
+
+    STATUS_CHOICES = [
+        ('pending', 'Σε εκκρεμότητα'),
+        ('accepted', 'Αποδεκτή'),
+        ('rejected', 'Απορριφθείσα'),
+        ('cancelled', 'Ακυρωμένη'),
+        ('completed', 'Ολοκληρωμένη'),
+    ]
+
+    TRANSACTION_TYPE_CHOICES = [
+        ('exchange', 'Ανταλλαγή'),
+        ('loan', 'Δανεισμός'),
+        ('either', 'Ανταλλαγή ή Δανεισμός'),
+    ]
+
+    # Ο χρήστης που ζητά τη συναλλαγή
+    requester = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='sent_transactions',
+        verbose_name="Αιτών"
+    )
+
+    # Ο ιδιοκτήτης του αντικειμένου
+    owner = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='received_transactions',
+        verbose_name="Ιδιοκτήτης"
+    )
+
+    # Το αντικείμενο που ζητείται (ανήκει στον ιδιοκτήτη)
+    item = models.ForeignKey(
+        Item,
+        on_delete=models.CASCADE,
+        related_name='transactions',
+        verbose_name="Αντικείμενο"
+    )
+
+    # Το αντικείμενο που προσφέρει ο αιτών (μόνο για ανταλλαγές)
+    requested_item = models.ForeignKey(
+        Item,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='exchange_offers',
+        verbose_name="Αντικείμενο προς ανταλλαγή"
+    )
+
+    # Είδος συναλλαγής
+    transaction_type = models.CharField(
+        max_length=10,
+        choices=TRANSACTION_TYPE_CHOICES,
+        verbose_name="Τύπος συναλλαγής"
+    )
+
+    # Προαιρετικό μήνυμα από τον αιτούντα
+    message = models.TextField(blank=True, verbose_name="Μήνυμα")
+
+    # Κατάσταση συναλλαγής
+    status = models.CharField(
+        max_length=10,
+        choices=STATUS_CHOICES,
+        default='pending',
+        verbose_name="Κατάσταση"
+    )
+
+    # Περίοδος δανεισμού (μόνο για loan)
+    start_date = models.DateField(null=True, blank=True, verbose_name="Έναρξη δανεισμού")
+    end_date = models.DateField(null=True, blank=True, verbose_name="Λήξη δανεισμού")
+
+    # Ημερομηνία δημιουργίας
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Ημερομηνία δημιουργίας")
+
+    def __str__(self):
+        """
+        Αναπαράσταση της συναλλαγής σε μορφή κειμένου
+        π.χ. "userA → userB (Ανταλλαγή)"
+        """
+        return f"{self.requester} → {self.owner} ({self.get_transaction_type_display()})"
+
+    class Meta:
+        verbose_name = "Συναλλαγή"
+        verbose_name_plural = "Συναλλαγές"
+        ordering = ['-created_at']
