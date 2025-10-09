@@ -8,6 +8,7 @@ class Item(models.Model):
     TRANSACTION_CHOICES = [
         ('exchange', 'Ανταλλαγή'),
         ('loan', 'Δανεισμός'),
+        ('either', 'Ανταλλαγή ή Δανεισμός'),
     ]
 
     title = models.CharField(max_length=100)
@@ -22,13 +23,18 @@ class Item(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     main_image = models.ImageField(upload_to='item_images/', blank=True, null=True)
 
-    # Καθένα αντικείμενο ανήκει σε έναν χρήστη (owner)
     owner = models.ForeignKey(
         User,
         on_delete=models.CASCADE,
         related_name='items',
         verbose_name="Ιδιοκτήτης"
     )
+
+    terms = models.TextField(
+    blank=True,
+    null=True,
+    verbose_name="Προεπιλεγμένοι Όροι Διάθεσης"
+)
 
     def __str__(self):
         return f"{self.title} ({self.get_transaction_type_display()})"
@@ -40,7 +46,6 @@ class Item(models.Model):
 
 
 class ItemImage(models.Model):
-    # Συνδέεται με ένα αντικείμενο (πολλές φωτογραφίες ανά item)
     item = models.ForeignKey(
         Item,
         related_name="images",

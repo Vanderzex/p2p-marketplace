@@ -1,6 +1,8 @@
 from django.db import models
 from django.conf import settings
+from django.core.exceptions import ValidationError
 from items.models import Item
+from django.utils import timezone
 
 
 class Transaction(models.Model):
@@ -10,12 +12,14 @@ class Transaction(models.Model):
     """
 
     STATUS_CHOICES = [
-        ('pending', 'Σε εκκρεμότητα'),
-        ('accepted', 'Αποδεκτή'),
-        ('rejected', 'Απορριφθείσα'),
-        ('cancelled', 'Ακυρωμένη'),
-        ('completed', 'Ολοκληρωμένη'),
-    ]
+    ('pending', 'Σε εκκρεμότητα'),
+    ('pending_terms', 'Εκκρεμεί αποδοχή όρων'),
+    ('pending_confirmation', 'Εκκρεμεί επιβεβαίωση'),
+    ('accepted', 'Ενεργή'),
+    ('rejected', 'Απορριφθείσα'),
+    ('cancelled', 'Ακυρωμένη'),
+    ('completed', 'Ολοκληρωμένη'),
+]
 
     TRANSACTION_TYPE_CHOICES = [
         ('exchange', 'Ανταλλαγή'),
@@ -69,18 +73,77 @@ class Transaction(models.Model):
 
     # Κατάσταση συναλλαγής
     status = models.CharField(
-        max_length=10,
+        max_length=30,
         choices=STATUS_CHOICES,
         default='pending',
         verbose_name="Κατάσταση"
     )
 
-    # Περίοδος δανεισμού (μόνο για loan)
-    start_date = models.DateField(null=True, blank=True, verbose_name="Έναρξη δανεισμού")
-    end_date = models.DateField(null=True, blank=True, verbose_name="Λήξη δανεισμού")
+    # Περίοδος δανεισμού (ισχύει μόνο για loan)
+    start_date = models.DateField(
+        null=True,
+        blank=True,
+        verbose_name="Έναρξη δανεισμού"
+    )
+    end_date = models.DateField(
+        null=True,
+        blank=True,
+        verbose_name="Λήξη δανεισμού"
+    )
 
     # Ημερομηνία δημιουργίας
-    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Ημερομηνία δημιουργίας")
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name="Ημερομηνία δημιουργίας"
+    )
+
+    # Ημερομηνία επιστροφής (μόνο όταν ο ιδιοκτήτης μαρκάρει “Επιστράφηκε”)
+    returned_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name="Ημερομηνία επιστροφής"
+    )
+
+    # Όροι δανεισμού (ισχύουν μόνο για loan)
+    terms = models.TextField(
+        blank=True,
+        null=True,
+        verbose_name="Όροι Δανεισμού"
+    )
+
+    borrower_accepted_terms = models.BooleanField(
+        default=False,
+        verbose_name="Αποδοχή Όρων από Αιτούντα"
+    )
+
+    def clean(self):
+        """
+        """
+        # ----- ΔΑΝΕΙΣΜΟΣ -----
+        if self.transaction_type == 'loan':
+            if not self.start_date or not self.end_date:
+                raise ValidationError("Πρέπει να οριστούν ημερομηνίες για δανεισμό.")
+            if self.start_date > self.end_date:
+                raise ValidationError("Η ημερομηνία λήξης πρέπει να είναι μετά την έναρξη.")
+            # Οι όροι είναι προαιρετικοί αλλά λογικά αποδεκτοί
+            # Αν δεν έχει αποδεχθεί τους όρους, δεν μπορεί να γίνει accepted
+            if self.status == 'accepted' and not self.borrower_accepted_terms:
+                raise ValidationError("Ο αιτών πρέπει να αποδεχθεί τους όρους δανεισμού πριν εγκριθεί η συναλλαγή.")
+
+        # ----- ΑΝΤΑΛΛΑΓΗ -----
+        elif self.transaction_type == 'exchange':
+            # Απαγορεύονται ημερομηνίες & όροι
+            if self.start_date or self.end_date or self.terms:
+                raise ValidationError("Δεν επιτρέπονται ημερομηνίες ή όροι για ανταλλαγή.")
+            self.start_date = None
+            self.end_date = None
+            self.terms = None
+            self.borrower_accepted_terms = False
+
+        # ----- ΕΙΤΕ -----
+        elif self.transaction_type == 'either':
+            # Επιτρέπουμε και τα δύο, χωρίς υποχρέωση
+            pass
 
     def __str__(self):
         """

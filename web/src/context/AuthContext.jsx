@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, useEffect, useRef } from "react";
 import toast from "react-hot-toast";
-import { jwtDecode } from "jwt-decode"; 
+import { jwtDecode } from "jwt-decode";
 
 const AuthContext = createContext();
 
@@ -9,9 +9,9 @@ export const AuthProvider = ({ children }) => {
   const [token, setToken] = useState(null);
   const [loading, setLoading] = useState(true);
   const [tokenExpiry, setTokenExpiry] = useState(null);
-  const refreshingRef = useRef(false); // αποτρέπει διπλά refresh
+  const refreshingRef = useRef(false);
 
-  // Αρχικοποίηση
+  // 🔹 Αρχικοποίηση από localStorage
   useEffect(() => {
     const storedToken = localStorage.getItem("token");
     const storedUser = localStorage.getItem("user");
@@ -19,15 +19,24 @@ export const AuthProvider = ({ children }) => {
     if (storedToken) {
       setToken(storedToken);
 
-      const decoded = jwtDecode(storedToken);
-      setTokenExpiry(decoded.exp * 1000);
+      try {
+        const decoded = jwtDecode(storedToken);
+        setTokenExpiry(decoded.exp * 1000);
+      } catch (err) {
+        console.warn("⚠️ Μη έγκυρο token, καθαρισμός...");
+        logout();
+        return;
+      }
 
       if (storedUser) {
         setUser(JSON.parse(storedUser));
         setLoading(false);
       } else {
         fetch("http://localhost:8000/api/me/", {
-          headers: { Authorization: `Bearer ${storedToken}` },
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${storedToken}`,
+          },
         })
           .then((res) => (res.ok ? res.json() : null))
           .then((data) => {
@@ -44,7 +53,7 @@ export const AuthProvider = ({ children }) => {
     }
   }, []);
 
-  // Login
+  // 🔐 Είσοδος χρήστη
   const login = async (username, password) => {
     try {
       const response = await fetch("http://localhost:8000/api/login/", {
@@ -67,8 +76,12 @@ export const AuthProvider = ({ children }) => {
       const decoded = jwtDecode(data.access);
       setTokenExpiry(decoded.exp * 1000);
 
+      // Φόρτωση στοιχείων χρήστη
       const meRes = await fetch("http://localhost:8000/api/me/", {
-        headers: { Authorization: `Bearer ${data.access}` },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${data.access}`,
+        },
       });
 
       if (!meRes.ok) throw new Error("Αποτυχία φόρτωσης στοιχείων χρήστη");
@@ -86,7 +99,7 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  // Εγγραφή
+  // 🧾 Εγγραφή
   const register = async (username, password) => {
     try {
       const response = await fetch("http://localhost:8000/api/register/", {
@@ -105,9 +118,9 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  // Refresh token
+  // ♻️ Refresh token
   const refreshToken = async () => {
-    if (refreshingRef.current) return; // αποφυγή πολλαπλών refresh
+    if (refreshingRef.current) return;
     refreshingRef.current = true;
 
     const refresh = localStorage.getItem("refresh");
@@ -117,8 +130,6 @@ export const AuthProvider = ({ children }) => {
     }
 
     try {
-      toast.loading("🔄 Ανανέωση token...", { id: "refresh" });
-
       const response = await fetch("http://localhost:8000/api/token/refresh/", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -134,11 +145,9 @@ export const AuthProvider = ({ children }) => {
       const decoded = jwtDecode(data.access);
       setTokenExpiry(decoded.exp * 1000);
 
-      toast.dismiss("refresh");
       toast.success("✅ Το token ανανεώθηκε!");
     } catch (err) {
       console.error("Σφάλμα refresh token:", err);
-      toast.dismiss("refresh");
       toast.error("⏳ Το token έληξε. Συνδέσου ξανά.");
       logout();
     } finally {
@@ -146,44 +155,27 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  // Έξυπνο Auto-Refresh κάθε 30s
- useEffect(() => {
-  if (!tokenExpiry) return;
+  // ⏱️ Έλεγχος & auto refresh
+  useEffect(() => {
+    if (!tokenExpiry) return;
 
-  const interval = setInterval(() => {
-    const now = Date.now();
-    const timeLeft = tokenExpiry - now;
+    const interval = setInterval(() => {
+      const now = Date.now();
+      const timeLeft = tokenExpiry - now;
 
-    if (timeLeft <= 0) {
-      toast.error("⏳ Το token έληξε. Συνδέσου ξανά.");
-      logout();
-      clearInterval(interval);
-    } 
-    else if (timeLeft < 60 * 1000 && !refreshingRef.current) {
-      const secondsLeft = Math.floor(timeLeft / 1000);
-      toast(`🕐 Το token λήγει σε ${secondsLeft} δευτ.`, { id: "countdown" });
-
-      if (secondsLeft <= 10) {
-        // 🔄 Ξεκίνα ανανέωση στα τελευταία 10 δευτ.
-        toast.loading("🔄 Ανανέωση token...", { id: "refresh" });
-        refreshToken()
-          .then(() => {
-            toast.dismiss("refresh");
-            toast.success("✅ Το token ανανεώθηκε!");
-            toast.dismiss("countdown");
-          })
-          .catch(() => {
-            toast.dismiss("refresh");
-            toast.error("⚠️ Αποτυχία ανανέωσης token");
-          });
+      if (timeLeft <= 0) {
+        toast.error("⏳ Το token έληξε. Συνδέσου ξανά.");
+        logout();
+        clearInterval(interval);
+      } else if (timeLeft < 30 * 1000 && !refreshingRef.current) {
+        refreshToken();
       }
-    }
-  }, 1000); // έλεγχος κάθε 1 δευτερόλεπτο για καλύτερο countdown
+    }, 5000);
 
-  return () => clearInterval(interval);
-}, [tokenExpiry]);
+    return () => clearInterval(interval);
+  }, [tokenExpiry]);
 
-  // Logout
+  // 🚪 Αποσύνδεση
   const logout = () => {
     setUser(null);
     setToken(null);
@@ -192,6 +184,37 @@ export const AuthProvider = ({ children }) => {
     localStorage.removeItem("refresh");
     localStorage.removeItem("user");
     toast("👋 Αποσυνδεθήκατε");
+  };
+
+  // 🧩 ΝΕΟ: Helper για fetch με αυτόματο Authorization & retry
+  const authFetch = async (url, options = {}) => {
+    if (!token) throw new Error("No auth token available");
+
+    let headers = {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+      ...(options.headers || {}),
+    };
+
+    console.log("🔑 Χρήση token:", token?.slice(0, 20) + "...");
+
+    let res = await fetch(url, { ...options, headers });
+
+    // Αν το token έληξε, κάνε refresh και ξαναδοκίμασε
+    if (res.status === 401) {
+      console.warn("🔁 Token πιθανόν έληξε, ανανέωση...");
+      await refreshToken();
+
+      const newToken = localStorage.getItem("token");
+      headers = {
+        ...headers,
+        Authorization: `Bearer ${newToken}`,
+      };
+
+      res = await fetch(url, { ...options, headers });
+    }
+
+    return res;
   };
 
   return (
@@ -204,6 +227,7 @@ export const AuthProvider = ({ children }) => {
         register,
         logout,
         refreshToken,
+        authFetch, // 🔒 ασφαλής fetch για προστατευμένα endpoints
         isAuthenticated: !!user,
       }}
     >

@@ -6,11 +6,13 @@ import { useNavigate } from "react-router-dom";
 /**
  * AddItemForm
  * Φόρμα προσθήκης νέου αντικειμένου (με JWT έλεγχο & προεπισκόπηση εικόνας)
+ * Οι όροι διάθεσης εμφανίζονται μόνο για "loan" ή "either"
  */
 export default function AddItemForm({ onAddItem }) {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [transactionType, setTransactionType] = useState("exchange");
+  const [terms, setTerms] = useState("");
   const [image, setImage] = useState(null);
   const [preview, setPreview] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -18,7 +20,7 @@ export default function AddItemForm({ onAddItem }) {
   const { token, isAuthenticated } = useAuth();
   const navigate = useNavigate();
 
-  // Αν δεν είναι συνδεδεμένος → redirect
+  // Αν δεν είναι συνδεδεμένος redirect
   if (!isAuthenticated) {
     toast.error("⚠️ Πρέπει να συνδεθείς για να προσθέσεις αντικείμενο!");
     navigate("/login");
@@ -29,20 +31,15 @@ export default function AddItemForm({ onAddItem }) {
   const handleImageChange = (e) => {
     const file = e.target.files[0];
     setImage(file);
-    if (file) {
-      const previewUrl = URL.createObjectURL(file);
-      setPreview(previewUrl);
-    } else {
-      setPreview(null);
-    }
+    setPreview(file ? URL.createObjectURL(file) : null);
   };
 
-  // 🔹 Υποβολή φόρμας
+  // Υποβολή φόρμας
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-    if (!name || !description) {
-      toast.error("⚠️ Συμπλήρωσε όλα τα πεδία!");
+    if (!name.trim() || !description.trim()) {
+      toast.error("⚠️ Συμπλήρωσε όλα τα υποχρεωτικά πεδία!");
       return;
     }
 
@@ -51,15 +48,19 @@ export default function AddItemForm({ onAddItem }) {
     formData.append("description", description);
     formData.append("transaction_type", transactionType);
     formData.append("available", true);
+
+    // Μόνο αν είναι loan ή either αποστέλλονται οι όροι
+    if ((transactionType === "loan" || transactionType === "either") && terms.trim()) {
+      formData.append("terms", terms.trim());
+    }
+
     if (image) formData.append("main_image", image);
 
     try {
       setLoading(true);
       const response = await fetch("http://localhost:8000/api/items/", {
         method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
+        headers: { Authorization: `Bearer ${token}` },
         body: formData,
       });
 
@@ -69,7 +70,11 @@ export default function AddItemForm({ onAddItem }) {
         return;
       }
 
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error("Απάντηση:", errorText);
+        throw new Error(`HTTP ${response.status}`);
+      }
 
       const savedItem = await response.json();
       onAddItem(savedItem);
@@ -79,6 +84,7 @@ export default function AddItemForm({ onAddItem }) {
       setName("");
       setDescription("");
       setTransactionType("exchange");
+      setTerms("");
       setImage(null);
       setPreview(null);
     } catch (err) {
@@ -91,24 +97,26 @@ export default function AddItemForm({ onAddItem }) {
 
   return (
     <form onSubmit={handleSubmit} style={styles.form} encType="multipart/form-data">
-      <h2>Προσθήκη Αντικειμένου</h2>
+      <h2 style={{ textAlign: "center" }}>Προσθήκη Αντικειμένου</h2>
 
+      <label style={styles.label}>Όνομα αντικειμένου *</label>
       <input
         type="text"
-        placeholder="Όνομα αντικειμένου"
+        placeholder="Π.χ. Βιβλίο, Επιτραπέζιο, Κάμερα..."
         value={name}
         onChange={(e) => setName(e.target.value)}
         style={styles.input}
       />
 
+      <label style={styles.label}>Περιγραφή *</label>
       <textarea
-        placeholder="Περιγραφή"
+        placeholder="Περιέγραψε το αντικείμενο και την κατάστασή του..."
         value={description}
         onChange={(e) => setDescription(e.target.value)}
         style={styles.textarea}
       />
 
-      {/* 🔹 Επέκταση επιλογών τύπου συναλλαγής */}
+      <label style={styles.label}>Τύπος συναλλαγής *</label>
       <select
         value={transactionType}
         onChange={(e) => setTransactionType(e.target.value)}
@@ -119,9 +127,24 @@ export default function AddItemForm({ onAddItem }) {
         <option value="either">🔁🤝 Ανταλλαγή ή Δανεισμός</option>
       </select>
 
+      {/*Όροι διάθεσης — εμφανίζονται μόνο για loan ή either */}
+      {(transactionType === "loan" || transactionType === "either") && (
+        <>
+          <label style={styles.label}>Όροι διάθεσης (προαιρετικά)</label>
+          <textarea
+            placeholder="Π.χ. Επιστροφή εντός 7 ημερών, χωρίς φθορές..."
+            value={terms}
+            onChange={(e) => setTerms(e.target.value.slice(0, 500))}
+            style={styles.textarea}
+          />
+          <p style={styles.charCounter}>{terms.length}/500</p>
+        </>
+      )}
+
+      <label style={styles.label}>Εικόνα αντικειμένου (προαιρετικά)</label>
       <input type="file" accept="image/*" onChange={handleImageChange} style={styles.fileInput} />
 
-      {/* ✅ Προεπισκόπηση εικόνας */}
+      {/* Προεπισκόπηση εικόνας */}
       {preview && (
         <div style={styles.previewContainer}>
           <img src={preview} alt="Προεπισκόπηση" style={styles.previewImage} />
@@ -139,22 +162,27 @@ export default function AddItemForm({ onAddItem }) {
       )}
 
       <button type="submit" style={styles.button} disabled={loading}>
-        {loading ? "Αποστολή..." : "Προσθήκη"}
+        {loading ? "Αποστολή..." : "Προσθήκη Αντικειμένου"}
       </button>
     </form>
   );
 }
 
-// 🎨 Styling
+// Styling
 const styles = {
   form: {
     background: "#f5f5f5",
-    padding: "15px",
+    padding: "20px",
     borderRadius: "10px",
     margin: "0 auto 25px",
-    width: "320px",
-    textAlign: "left",
-    boxShadow: "0 2px 4px rgba(0,0,0,0.1)",
+    width: "340px",
+    boxShadow: "0 2px 6px rgba(0,0,0,0.15)",
+  },
+  label: {
+    fontWeight: "bold",
+    marginBottom: "5px",
+    display: "block",
+    color: "#333",
   },
   input: {
     width: "100%",
@@ -166,10 +194,16 @@ const styles = {
   textarea: {
     width: "100%",
     padding: "8px",
-    marginBottom: "10px",
+    marginBottom: "5px",
     borderRadius: "6px",
     border: "1px solid #ccc",
     minHeight: "60px",
+  },
+  charCounter: {
+    textAlign: "right",
+    fontSize: "0.8rem",
+    color: "#666",
+    marginBottom: "10px",
   },
   select: {
     width: "100%",
@@ -210,5 +244,6 @@ const styles = {
     borderRadius: "6px",
     padding: "10px",
     cursor: "pointer",
+    fontWeight: "bold",
   },
 };

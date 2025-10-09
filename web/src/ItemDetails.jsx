@@ -6,7 +6,7 @@ import { useAuth } from "./context/AuthContext";
 export default function ItemDetails() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { user, token } = useAuth();
+  const { user, token, authFetch } = useAuth();
 
   const [item, setItem] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -16,12 +16,15 @@ export default function ItemDetails() {
   const [newImage, setNewImage] = useState(null);
   const [preview, setPreview] = useState(null);
 
-  // 🆕 Transaction state
+  // Transaction state
   const [showTransactionForm, setShowTransactionForm] = useState(false);
-  const [transactionType, setTransactionType] = useState("exchange");
+  const [transactionType, setTransactionType] = useState("");
   const [message, setMessage] = useState("");
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
 
-  // 🔹 Φόρτωση αντικειμένου
+  // Φόρτωση αντικειμένου
   const fetchItem = () => {
     fetch(`http://localhost:8000/api/items/${id}/`)
       .then((res) => {
@@ -46,15 +49,14 @@ export default function ItemDetails() {
 
   const isOwner = user?.username === item?.owner;
 
-  // 🔹 Διαγραφή αντικειμένου
+  // Διαγραφή αντικειμένου
   const handleDelete = async () => {
     if (!token) return toast.error("Πρέπει να συνδεθείς πρώτα!");
     if (!window.confirm("Είσαι σίγουρος ότι θέλεις να διαγράψεις αυτό το αντικείμενο;")) return;
 
     try {
-      const response = await fetch(`http://localhost:8000/api/items/${id}/`, {
+      const response = await authFetch(`http://localhost:8000/api/items/${id}/`, {
         method: "DELETE",
-        headers: { Authorization: `Bearer ${token}` },
       });
 
       if (response.status === 204) {
@@ -71,7 +73,7 @@ export default function ItemDetails() {
     }
   };
 
-  // 🔹 Επιλογή & Upload νέας εικόνας
+  // Upload εικόνας
   const handleImageChange = (e) => {
     const file = e.target.files[0];
     setNewImage(file);
@@ -103,7 +105,7 @@ export default function ItemDetails() {
     }
   };
 
-  // 🔹 Ενημέρωση αντικειμένου
+  // Ενημέρωση αντικειμένου
   const handleSave = async () => {
     if (!token) return toast.error("Πρέπει να συνδεθείς πρώτα!");
 
@@ -115,9 +117,8 @@ export default function ItemDetails() {
     if (newImage) formData.append("main_image", newImage);
 
     try {
-      const response = await fetch(`http://localhost:8000/api/items/${id}/`, {
+      const response = await authFetch(`http://localhost:8000/api/items/${id}/`, {
         method: "PUT",
-        headers: { Authorization: `Bearer ${token}` },
         body: formData,
       });
 
@@ -135,23 +136,28 @@ export default function ItemDetails() {
     }
   };
 
-  // 🆕 Αποστολή αιτήματος συναλλαγής
+  // Αποστολή αιτήματος συναλλαγής
   const handleSendTransaction = async (e) => {
     e.preventDefault();
     if (!token) return toast.error("Πρέπει να συνδεθείς πρώτα!");
     if (isOwner) return toast.error("Δεν μπορείς να στείλεις αίτημα στο δικό σου αντικείμενο!");
 
+    if (transactionType === "loan" && item.terms && !acceptedTerms) {
+      return toast.error("Πρέπει να αποδεχτείς τους όρους πριν την αποστολή!");
+    }
+
     try {
-      const response = await fetch("http://localhost:8000/api/transactions/", {
+      const response = await authFetch("http://localhost:8000/api/transactions/", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          item: item.id, // ✅ σωστό όνομα field σύμφωνα με model Transaction
+          item: item.id,
           transaction_type: transactionType,
           message,
+          start_date: transactionType === "loan" ? startDate : null,
+          end_date: transactionType === "loan" ? endDate : null,
+          terms: transactionType === "loan" ? item.terms : null,
+          borrower_accepted_terms: transactionType === "loan" ? acceptedTerms : false,
         }),
       });
 
@@ -159,13 +165,12 @@ export default function ItemDetails() {
         toast.success("📩 Το αίτημα στάλθηκε επιτυχώς!");
         setShowTransactionForm(false);
         setMessage("");
-      } else if (response.status === 400) {
-        const data = await response.json();
-        toast.error(data.error || "❌ Μη έγκυρα δεδομένα.");
-      } else if (response.status === 403) {
-        toast.error("🚫 Δεν έχεις δικαίωμα για αυτή τη συναλλαγή.");
+        setStartDate("");
+        setEndDate("");
+        setAcceptedTerms(false);
       } else {
-        toast.error("❌ Σφάλμα αποστολής αιτήματος.");
+        const data = await response.json();
+        toast.error(Object.values(data)[0] || "❌ Μη έγκυρα δεδομένα.");
       }
     } catch (err) {
       console.error("Σφάλμα:", err);
@@ -173,7 +178,6 @@ export default function ItemDetails() {
     }
   };
 
-  // 🧭 Loading / Error states
   if (loading) return <p style={styles.loading}>Φόρτωση...</p>;
   if (error) return <p style={styles.error}>{error}</p>;
   if (!item) return <p>Το αντικείμενο δεν βρέθηκε.</p>;
@@ -185,6 +189,19 @@ export default function ItemDetails() {
       ? item.main_image
       : `http://localhost:8000${item.main_image}`
     : null;
+
+  // Επιλογές τύπου συναλλαγής
+  const availableOptions = [];
+  if (item.transaction_type === "exchange") {
+    availableOptions.push({ value: "exchange", label: "🔁 Ανταλλαγή" });
+  } else if (item.transaction_type === "loan") {
+    availableOptions.push({ value: "loan", label: "🤝 Δανεισμός" });
+  } else if (item.transaction_type === "either") {
+    availableOptions.push(
+      { value: "exchange", label: "🔁 Ανταλλαγή" },
+      { value: "loan", label: "🤝 Δανεισμός" }
+    );
+  }
 
   return (
     <div style={styles.container}>
@@ -198,29 +215,27 @@ export default function ItemDetails() {
         )}
       </div>
 
-      {item.images && item.images.length > 0 && (
-        <div style={styles.gallery}>
-          {item.images.map((img) => (
-            <img
-              key={img.id}
-              src={img.image.startsWith("http") ? img.image : `http://localhost:8000${img.image}`}
-              alt="Gallery"
-              style={styles.galleryImage}
-            />
-          ))}
-        </div>
-      )}
-
       <div style={styles.card}>
         <h2>{item.title}</h2>
         <p>{item.description}</p>
+
+        {item.transaction_type === "loan" && item.terms && (
+          <div style={styles.termsBox}>
+            <h3>📜 Όροι Δανεισμού</h3>
+            <p style={styles.termsText}>{item.terms}</p>
+          </div>
+        )}
+
         <p>
           <strong>Τύπος:</strong>{" "}
-          {item.transaction_type === "exchange" ? "🔁 Ανταλλαγή" : "🤝 Δανεισμός"}
+          {item.transaction_type === "exchange"
+            ? "🔁 Ανταλλαγή"
+            : item.transaction_type === "loan"
+            ? "🤝 Δανεισμός"
+            : "🔁🤝 Ανταλλαγή ή Δανεισμός"}
         </p>
         <p>
-          <strong>Κατάσταση:</strong>{" "}
-          {item.available ? "✅ Διαθέσιμο" : "❌ Μη διαθέσιμο"}
+          <strong>Κατάσταση:</strong> {item.available ? "✅ Διαθέσιμο" : "❌ Μη διαθέσιμο"}
         </p>
         <p>
           <strong>Ιδιοκτήτης:</strong> {item.owner || "Άγνωστος"}
@@ -238,7 +253,7 @@ export default function ItemDetails() {
         )}
       </div>
 
-      {/* 🆕 Φόρμα συναλλαγής */}
+      {/* Φόρμα συναλλαγής */}
       {!isOwner && item.available && (
         <div style={styles.transactionSection}>
           {showTransactionForm ? (
@@ -247,18 +262,79 @@ export default function ItemDetails() {
                 value={transactionType}
                 onChange={(e) => setTransactionType(e.target.value)}
                 style={styles.select}
+                required
               >
-                <option value="exchange">🔁 Ανταλλαγή</option>
-                <option value="loan">🤝 Δανεισμός</option>
+                <option value="">-- Επιλογή τύπου --</option>
+                {availableOptions.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
               </select>
+
+              {/* Ανταλλαγή */}
+              {transactionType === "exchange" && (
+                <p style={{ marginBottom: "10px", textAlign: "left", color: "#444" }}>
+                  Ο ιδιοκτήτης θα επιλέξει ποιο από τα αντικείμενά σου επιθυμεί για ανταλλαγή.
+                </p>
+              )}
+
+              {/* Δανεισμός */}
+              {transactionType === "loan" && (
+                <>
+                  <div style={{ marginBottom: "10px" }}>
+                    <label>Ημερομηνία Έναρξης:</label>
+                    <input
+                      type="date"
+                      value={startDate}
+                      onChange={(e) => setStartDate(e.target.value)}
+                      required
+                      style={styles.inputDate}
+                    />
+                    <label>Ημερομηνία Λήξης:</label>
+                    <input
+                      type="date"
+                      value={endDate}
+                      onChange={(e) => setEndDate(e.target.value)}
+                      required
+                      style={styles.inputDate}
+                    />
+                  </div>
+
+                  {item.terms && (
+                    <label style={{ display: "block", textAlign: "left", marginBottom: "10px" }}>
+                      <input
+                        type="checkbox"
+                        checked={acceptedTerms}
+                        onChange={(e) => setAcceptedTerms(e.target.checked)}
+                        required
+                      />{" "}
+                      Αποδέχομαι τους όρους δανεισμού
+                    </label>
+                  )}
+                </>
+              )}
+
               <textarea
                 placeholder="Προαιρετικό μήνυμα..."
                 value={message}
                 onChange={(e) => setMessage(e.target.value)}
                 style={styles.textarea}
               />
+
               <div style={styles.buttonsRow}>
-                <button type="submit" style={styles.saveButton}>
+                <button
+                  type="submit"
+                  style={{
+                    ...styles.saveButton,
+                    opacity: item.terms && transactionType === "loan" && !acceptedTerms ? 0.6 : 1,
+                    cursor:
+                      item.terms && transactionType === "loan" && !acceptedTerms
+                        ? "not-allowed"
+                        : "pointer",
+                  }}
+                  disabled={item.terms && transactionType === "loan" && !acceptedTerms}
+                >
                   📩 Αποστολή
                 </button>
                 <button
@@ -271,10 +347,7 @@ export default function ItemDetails() {
               </div>
             </form>
           ) : (
-            <button
-              onClick={() => setShowTransactionForm(true)}
-              style={styles.requestButton}
-            >
+            <button onClick={() => setShowTransactionForm(true)} style={styles.requestButton}>
               📩 Αίτημα συναλλαγής
             </button>
           )}
@@ -297,18 +370,19 @@ export default function ItemDetails() {
   );
 }
 
-// 🎨 Styling (πρέπει να είναι στο ΤΕΛΟΣ)
+// Styling
 const styles = {
   container: { maxWidth: "600px", margin: "50px auto", textAlign: "center", fontFamily: "Arial, sans-serif" },
   imageContainer: { marginBottom: "15px" },
   image: { width: "100%", maxHeight: "300px", objectFit: "cover", borderRadius: "10px" },
-  gallery: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(100px, 1fr))", gap: "10px", marginBottom: "20px" },
-  galleryImage: { width: "100%", height: "100px", objectFit: "cover", borderRadius: "8px" },
   noImage: { width: "100%", height: "200px", borderRadius: "10px", background: "#e0e0e0", display: "flex", justifyContent: "center", alignItems: "center", color: "#666" },
+  termsBox: { background: "#f8f9fa", border: "1px solid #ddd", borderRadius: "10px", padding: "15px", marginBottom: "15px", textAlign: "left" },
+  termsText: { whiteSpace: "pre-wrap", fontSize: "0.95rem", color: "#333" },
   card: { background: "#f7f7f7", borderRadius: "10px", boxShadow: "0 2px 5px rgba(0,0,0,0.1)", padding: "20px" },
   form: { background: "#f7f7f7", borderRadius: "10px", boxShadow: "0 2px 5px rgba(0,0,0,0.1)", padding: "20px" },
   textarea: { width: "100%", padding: "8px", marginBottom: "10px", borderRadius: "6px", border: "1px solid #ccc", minHeight: "60px" },
   select: { width: "100%", padding: "8px", marginBottom: "10px", borderRadius: "6px", border: "1px solid #ccc" },
+  inputDate: { width: "100%", padding: "8px", marginBottom: "10px", borderRadius: "6px", border: "1px solid #ccc" },
   buttonsRow: { display: "flex", justifyContent: "space-between", gap: "10px" },
   editButton: { flex: 1, background: "#0275d8", color: "white", border: "none", borderRadius: "6px", padding: "8px" },
   deleteButton: { flex: 1, background: "#d9534f", color: "white", border: "none", borderRadius: "6px", padding: "8px" },
