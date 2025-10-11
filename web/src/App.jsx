@@ -10,17 +10,13 @@ import RegisterPage from "./RegisterPage";
 import ProtectedRoute from "./ProtectedRoute";
 import { useAuth } from "./context/AuthContext";
 
-// 🆕 Νέα imports
 import ProfilePage from "./ProfilePage";
 import MyItemsPage from "./MyItemsPage";
 import MyTransactionsPage from "./MyTransactionsPage";
 
-/**
- * Κεντρική εφαρμογή P2P Marketplace
- * - Προβολή αντικειμένων
- * - Login / Logout
- * - Προστασία routes
- */
+// Ειδοποιήσεις
+import NotificationsBell from "./NotificationsBell";
+
 export default function App() {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -29,7 +25,6 @@ export default function App() {
 
   const { user, logout, isAuthenticated } = useAuth();
 
-  // 🔹 Φόρτωση αντικειμένων από backend
   useEffect(() => {
     const fetchItems = async () => {
       try {
@@ -47,7 +42,6 @@ export default function App() {
     fetchItems();
   }, []);
 
-  // 🔹 Προσθήκη νέου αντικειμένου
   const handleAddItem = (newItem) => {
     setItems((prev) => [...prev, newItem]);
     setSuccessMessage("✅ Το αντικείμενο προστέθηκε!");
@@ -56,7 +50,7 @@ export default function App() {
 
   return (
     <>
-      {/* 🔹 Navbar */}
+      {/* Navbar */}
       <div style={styles.navbar}>
         <Link to="/" style={styles.logo}>
           🛒 P2P Marketplace
@@ -71,7 +65,11 @@ export default function App() {
               <Link to="/my-transactions" style={styles.link}>
                 🔁 Συναλλαγές
               </Link>
-              <Link to="/profile" style={styles.link}>
+
+              {/* Bell εμφανίζεται μόνο όταν είσαι συνδεδεμένος */}
+              <NotificationsBell />
+
+              <Link to={`/profile/${user?.id}`} style={styles.link}>
                 👤 {user?.username}
               </Link>
               <button onClick={logout} style={styles.logoutBtn}>
@@ -93,8 +91,9 @@ export default function App() {
 
       <Toaster position="top-center" />
 
-      {/* 🔹 Routes */}
+      {/* Routes */}
       <Routes>
+        {/* Αρχική σελίδα */}
         <Route
           path="/"
           element={
@@ -107,11 +106,15 @@ export default function App() {
             />
           }
         />
+
+        {/* Προβολή αντικειμένου */}
         <Route path="/items/:id" element={<ItemDetails />} />
+
+        {/* Login / Register */}
         <Route path="/login" element={<LoginPage />} />
         <Route path="/register" element={<RegisterPage />} />
 
-        {/* 🔒 Προστατευμένα routes */}
+        {/* Προσθήκη αντικειμένου */}
         <Route
           path="/add"
           element={
@@ -121,8 +124,9 @@ export default function App() {
           }
         />
 
+        {/* Προφίλ */}
         <Route
-          path="/profile"
+          path="/profile/:id"
           element={
             <ProtectedRoute>
               <ProfilePage />
@@ -130,6 +134,7 @@ export default function App() {
           }
         />
 
+        {/* Τα αντικείμενά μου */}
         <Route
           path="/my-items"
           element={
@@ -139,6 +144,13 @@ export default function App() {
           }
         />
 
+        {/* Αντικείμενα άλλου χρήστη */}
+        <Route
+          path="/user-items/:username"
+          element={<MyItemsPage />}
+        />
+
+        {/* Οι συναλλαγές μου */}
         <Route
           path="/my-transactions"
           element={
@@ -152,7 +164,7 @@ export default function App() {
   );
 }
 
-/** 🏠 Κεντρική σελίδα με λίστα αντικειμένων */
+/** Κεντρική σελίδα */
 function HomePage({ items, loading, error, onAddItem, successMessage }) {
   return (
     <div style={styles.container}>
@@ -175,7 +187,11 @@ function HomePage({ items, loading, error, onAddItem, successMessage }) {
               <Link
                 key={item.id}
                 to={`/items/${item.id}`}
-                style={{ ...styles.card, textDecoration: "none", color: "inherit" }}
+                style={{
+                  ...styles.card,
+                  textDecoration: "none",
+                  color: "inherit",
+                }}
               >
                 <h3>{item.title}</h3>
                 <p>{item.description}</p>
@@ -193,7 +209,7 @@ function HomePage({ items, loading, error, onAddItem, successMessage }) {
   );
 }
 
-// 🎨 Styling
+// Styling
 const styles = {
   navbar: {
     background: "#0078d4",
@@ -246,14 +262,8 @@ const styles = {
     textAlign: "center",
     zIndex: 1000,
   },
-  title: {
-    fontSize: "2rem",
-    color: "#0078d4",
-  },
-  subtitle: {
-    color: "#555",
-    marginBottom: "20px",
-  },
+  title: { fontSize: "2rem", color: "#0078d4" },
+  subtitle: { color: "#555", marginBottom: "20px" },
   list: {
     display: "flex",
     flexWrap: "wrap",
@@ -271,8 +281,5 @@ const styles = {
     cursor: "pointer",
     transition: "transform 0.15s ease-in-out",
   },
-  error: {
-    color: "red",
-    fontWeight: "bold",
-  },
+  error: { color: "red", fontWeight: "bold" },
 };

@@ -1,37 +1,76 @@
 import { useEffect, useState } from "react";
 import { useAuth } from "./context/AuthContext";
-import { Link } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 import toast from "react-hot-toast";
 
 export default function MyItemsPage() {
   const { user, token } = useAuth();
+  const { username } = useParams(); // 🆕 αν υπάρχει στη διεύθυνση, βλέπουμε άλλον χρήστη
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    if (!token) return;
-    fetch("http://localhost:8000/api/items/", {
-      headers: { Authorization: `Bearer ${token}` },
-    })
-      .then((res) => res.json())
-      .then((data) => {
-        setItems(data.filter((item) => item.owner === user.username));
-        setLoading(false);
-      })
-      .catch(() => toast.error("Αποτυχία φόρτωσης αντικειμένων"));
-  }, [token, user]);
+  const isOwnProfile = !username || username === user?.username;
 
-  if (loading) return <p>Φόρτωση...</p>;
+  useEffect(() => {
+    if (!token || !user) return;
+
+    const fetchItems = async () => {
+      try {
+        let url = "http://localhost:8000/api/items/";
+        let headers = { Authorization: `Bearer ${token}` };
+
+        if (!isOwnProfile) {
+          // Αν βλέπουμε άλλον χρήστη, χρησιμοποίησε το public endpoint
+          url = `http://localhost:8000/api/items/of_user/${username}/`;
+          headers = {}; // Δεν απαιτεί authentication
+        }
+
+        const res = await fetch(url, { headers });
+        if (!res.ok) throw new Error("Αποτυχία φόρτωσης αντικειμένων");
+        const data = await res.json();
+
+        const filtered = isOwnProfile
+          ? data.filter(
+              (item) =>
+                item.owner === user.username ||
+                item.owner_username === user.username ||
+                item.owner?.username === user.username
+            )
+          : data;
+
+        setItems(filtered);
+      } catch (err) {
+        console.error("Σφάλμα:", err);
+        toast.error("⚠️ " + err.message);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchItems();
+  }, [token, user, username, isOwnProfile]);
+
+  if (loading) return <p style={styles.loading}>Φόρτωση αντικειμένων...</p>;
 
   return (
     <div style={styles.container}>
-      <h1>📦 Τα αντικείμενά μου</h1>
+      <h1>
+        📦 {isOwnProfile ? "Τα αντικείμενά μου" : `Αντικείμενα του χρήστη ${username}`}
+      </h1>
+
       {items.length === 0 ? (
-        <p>Δεν έχεις προσθέσει ακόμη αντικείμενα.</p>
+        <p>Δεν υπάρχουν διαθέσιμα αντικείμενα.</p>
       ) : (
         <ul style={styles.list}>
           {items.map((item) => (
             <li key={item.id} style={styles.card}>
+              {item.main_image && (
+                <img
+                  src={`http://localhost:8000${item.main_image}`}
+                  alt={item.title}
+                  style={styles.image}
+                />
+              )}
               <h3>{item.title}</h3>
               <p>{item.description}</p>
               <Link to={`/items/${item.id}`}>Προβολή</Link>
@@ -39,14 +78,32 @@ export default function MyItemsPage() {
           ))}
         </ul>
       )}
-      <Link to="/add" style={styles.addButton}>➕ Νέο αντικείμενο</Link>
-      <Link to="/profile" style={styles.backLink}>← Επιστροφή στο προφίλ</Link>
+
+      {/* Εμφάνιση κουμπιών μόνο για το δικό σου προφίλ */}
+      {isOwnProfile && (
+        <>
+          <Link to="/add" style={styles.addButton}>
+            ➕ Νέο αντικείμενο
+          </Link>
+          <Link to="/profile" style={styles.backLink}>
+            ← Επιστροφή στο προφίλ
+          </Link>
+        </>
+      )}
+
+      {/* Αν είναι άλλος χρήστης */}
+      {!isOwnProfile && (
+        <Link to={`/profile/${username}`} style={styles.backLink}>
+          ← Επιστροφή στο προφίλ χρήστη
+        </Link>
+      )}
     </div>
   );
 }
 
 const styles = {
-  container: { maxWidth: "600px", margin: "50px auto", textAlign: "center" },
+  container: { maxWidth: "650px", margin: "50px auto", textAlign: "center" },
+  loading: { textAlign: "center", marginTop: "60px" },
   list: { listStyle: "none", padding: 0 },
   card: {
     background: "#f8f9fa",
@@ -54,6 +111,13 @@ const styles = {
     borderRadius: "10px",
     padding: "15px",
     boxShadow: "0 1px 3px rgba(0,0,0,0.1)",
+  },
+  image: {
+    width: "100%",
+    height: "160px",
+    objectFit: "cover",
+    borderRadius: "8px",
+    marginBottom: "8px",
   },
   addButton: {
     display: "inline-block",

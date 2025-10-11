@@ -27,7 +27,7 @@ export default function AddItemForm({ onAddItem }) {
     return null;
   }
 
-  // 🔹 Επιλογή εικόνας + προεπισκόπηση
+  // Επιλογή εικόνας + προεπισκόπηση
   const handleImageChange = (e) => {
     const file = e.target.files[0];
     setImage(file);

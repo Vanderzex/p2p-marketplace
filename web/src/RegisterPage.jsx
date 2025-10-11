@@ -5,7 +5,7 @@ import toast from "react-hot-toast";
 
 const RegisterPage = () => {
   const navigate = useNavigate();
-  const { register, login } = useAuth(); // 👈 από AuthContext
+  const { register, login } = useAuth(); 
 
   const [formData, setFormData] = useState({
     username: "",
@@ -32,12 +32,12 @@ const RegisterPage = () => {
 
     setLoading(true);
     try {
-      // 🔹 Κλήση στο /api/register/ μέσω του AuthContext
+      // Κλήση στο /api/register/ μέσω του AuthContext
       const success = await register(formData.username, formData.password);
 
       if (success) {
         toast.success("🎉 Εγγραφή επιτυχής! Συνδέεστε...");
-        // ✅ Προαιρετικά: αυτόματο login
+        // Προαιρετικά: αυτόματο login
         const loggedIn = await login(formData.username, formData.password);
         if (loggedIn) {
           navigate("/");

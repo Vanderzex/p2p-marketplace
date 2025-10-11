@@ -1,28 +1,56 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
+import { Link, useSearchParams } from "react-router-dom";
 import toast from "react-hot-toast";
+import { motion, AnimatePresence } from "framer-motion";
 import { useAuth } from "./context/AuthContext";
+import ChatBox from "./ChatBox";
 
+/**
+ * MyTransactionsPage
+ * - Εισερχόμενα/Εξερχόμενα/Ιστορικό
+ * - Κουμπιά ενεργειών ανά ρόλο & κατάσταση
+ * - Popup modal για επιλογή αντικειμένου (exchange)
+ * - Δανεισμός: αποδοχή με ημερομηνίες, επιστροφή, ολοκλήρωση
+ * - Αξιολόγηση για completed
+ * - Chat (αιωρούμενο)
+ */
 export default function MyTransactionsPage() {
-  const { token, user } = useAuth();
+  const { user, authFetch } = useAuth();
   const [transactions, setTransactions] = useState([]);
   const [itemsByUser, setItemsByUser] = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
+  // Review state
+  const [selectedTransaction, setSelectedTransaction] = useState(null);
+  const [rating, setRating] = useState(5);
+  const [comment, setComment] = useState("");
+
+  // Tabs & Chat
+  const [activeTab, setActiveTab] = useState("active");
+  const [activeChat, setActiveChat] = useState(null);
+  const [pendingChatId, setPendingChatId] = useState(null);
+
+  // Exchange modal
+  const [exchangeModalOpen, setExchangeModalOpen] = useState(false);
+  const [exchangeModalTx, setExchangeModalTx] = useState(null);
+
+  // Loan accept inline inputs (ανά συναλλαγή)
+  const [loanDates, setLoanDates] = useState({}); // { [txId]: { start_date, end_date } }
+
+  const [searchParams] = useSearchParams();
+
   // Φόρτωση συναλλαγών
   const fetchTransactions = async () => {
-    if (!token) return;
+    if (!user) return;
     setLoading(true);
     try {
-      const res = await fetch("http://localhost:8000/api/transactions/", {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const res = await authFetch("http://localhost:8000/api/transactions/");
       if (!res.ok) throw new Error("Σφάλμα φόρτωσης συναλλαγών");
       const data = await res.json();
       setTransactions(data);
       setError(null);
     } catch (err) {
-      console.error("Σφάλμα:", err);
       setError("⚠️ Αποτυχία φόρτωσης συναλλαγών");
     } finally {
       setLoading(false);
@@ -31,15 +59,47 @@ export default function MyTransactionsPage() {
 
   useEffect(() => {
     fetchTransactions();
-  }, [token]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user]);
 
-  // Φόρτωση αντικειμένων αιτούντα με βάση το username
+  // Αν υπάρχει ?chat= ή ?transaction= ή ?tx= στο URL → αποθήκευση προσωρινά
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const chatParam = params.get("chat");
+    const txParam = params.get("transaction") || params.get("tx");
+    const target = chatParam || txParam;
+    if (target) {
+      console.log("📩 URL param:", target);
+      setPendingChatId(target);
+    }
+  }, []);
+
+// Μόλις φορτωθούν οι συναλλαγές → άνοιγμα ChatBox
+  useEffect(() => {
+    if (!pendingChatId || transactions.length === 0) return;
+
+    const tx = transactions.find((t) => String(t.id) === String(pendingChatId));
+    if (tx) {
+      const receiverId =
+      tx.owner?.id === user?.id ? tx.requester?.id : tx.owner?.id;
+
+      console.log("💬 Άνοιγμα chat για:", tx.id, "receiver:", receiverId);
+
+      setActiveChat({ transactionId: tx.id, receiverId });
+      toast.success(`💬 Άνοιξε η συνομιλία για τη συναλλαγή #${tx.id}`);
+      setPendingChatId(null);
+    } else {
+      console.warn("⚠️ Δεν βρέθηκε συναλλαγή με ID:", pendingChatId);
+    }
+  }, [transactions, pendingChatId, user]);
+
+  // Φόρτωση αντικειμένων αιτούντος (για modal επιλογής ανταλλαγής)
   const loadRequesterItems = async (username) => {
     if (!username || itemsByUser[username]) return;
     try {
-      const res = await fetch(`http://localhost:8000/api/items/of_user/${username}/`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const res = await authFetch(
+        `http://localhost:8000/api/items/of_user/${username}/`
+      );
       if (!res.ok) throw new Error();
       const data = await res.json();
       setItemsByUser((prev) => ({ ...prev, [username]: data }));
@@ -48,357 +108,716 @@ export default function MyTransactionsPage() {
     }
   };
 
-  // PATCH ενημέρωση κατάστασης (loan)
-  const handleAction = async (id, body) => {
+  // ===== Handlers για actions (API) =====
+
+  // Owner: Αποδοχή (για loan απαιτεί ημερομηνίες)
+  const handleAccept = async (tx) => {
     try {
-      const res = await fetch(`http://localhost:8000/api/transactions/${id}/`, {
-        method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify(body),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Αποτυχία ενημέρωσης");
-      toast.success("✅ Η συναλλαγή ενημερώθηκε!");
+      const body = { status: "accepted" };
+
+      if (tx.transaction_type === "loan") {
+        const dates = loanDates[tx.id] || {};
+        if (!dates.start_date || !dates.end_date) {
+          toast.error("🔔 Συμπλήρωσε ημερομηνίες δανεισμού");
+          return;
+        }
+        body.start_date = dates.start_date;
+        body.end_date = dates.end_date;
+      }
+
+      const res = await authFetch(
+        `http://localhost:8000/api/transactions/${tx.id}/`,
+        {
+          method: "PATCH",
+          body: JSON.stringify(body),
+        }
+      );
+      if (!res.ok) throw new Error("Αποτυχία αποδοχής");
+      toast.success("✅ Η αίτηση αποδέχθηκε");
       fetchTransactions();
-    } catch (err) {
-      console.error("Σφάλμα ενημέρωσης:", err);
-      toast.error(err.message || "⚠️ Πρόβλημα κατά την ενημέρωση");
+    } catch {
+      toast.error("⚠️ Σφάλμα αποδοχής");
     }
   };
 
-  // Επιλογή αντικειμένου για ανταλλαγή (ιδιοκτήτης)
-  const handleSelectExchangeItem = async (id, selectedItemId) => {
+  // Owner: Απόρριψη
+  const handleReject = async (txId) => {
     try {
-      const res = await fetch(
-        `http://localhost:8000/api/transactions/${id}/select_exchange_item/`,
+      const res = await authFetch(
+        `http://localhost:8000/api/transactions/${txId}/`,
+        {
+          method: "PATCH",
+          body: JSON.stringify({ status: "rejected" }),
+        }
+      );
+      if (!res.ok) throw new Error("Αποτυχία απόρριψης");
+      toast("❌ Η αίτηση απορρίφθηκε");
+      fetchTransactions();
+    } catch {
+      toast.error("⚠️ Σφάλμα απόρριψης");
+    }
+  };
+
+  // Owner: Άνοιγμα modal επιλογής αντικειμένου (exchange)
+  const openSelectItemModal = async (tx) => {
+    await loadRequesterItems(tx.requester?.username);
+    setExchangeModalTx(tx);
+    setExchangeModalOpen(true);
+  };
+
+  // Owner: Επιλογή αντικειμένου ανταλλαγής
+  const handleSelectExchangeItem = async (txId, selectedItemId) => {
+    try {
+      const res = await authFetch(
+        `http://localhost:8000/api/transactions/${txId}/select_exchange_item/`,
         {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
           body: JSON.stringify({ selected_item_id: selectedItemId }),
         }
       );
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Αποτυχία επιλογής αντικειμένου");
-      toast.success("✅ Επιλέχθηκε αντικείμενο για ανταλλαγή!");
+      if (!res.ok) throw new Error("Αποτυχία επιλογής αντικειμένου");
+      toast.success("🎁 Επιλέχθηκε αντικείμενο για ανταλλαγή");
+      setExchangeModalOpen(false);
+      setExchangeModalTx(null);
       fetchTransactions();
-    } catch (err) {
-      toast.error(err.message || "⚠️ Πρόβλημα κατά την επιλογή");
+    } catch {
+      toast.error("⚠️ Σφάλμα επιλογής αντικειμένου");
     }
   };
 
-  // Απόρριψη από ιδιοκτήτη
-  const handleOwnerRejectExchange = async (id) => {
+  // Requester: Επιβεβαίωση ανταλλαγής
+  const handleConfirmExchange = async (txId) => {
     try {
-      const res = await fetch(`http://localhost:8000/api/transactions/${id}/owner_reject_exchange/`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Αποτυχία απόρριψης ανταλλαγής");
-      toast.success("❌ Η ανταλλαγή απορρίφθηκε από τον ιδιοκτήτη!");
+      const res = await authFetch(
+        `http://localhost:8000/api/transactions/${txId}/confirm_exchange/`,
+        { method: "POST" }
+      );
+      if (!res.ok) throw new Error("Αποτυχία επιβεβαίωσης");
+      toast.success("✅ Η ανταλλαγή επιβεβαιώθηκε");
       fetchTransactions();
-    } catch (err) {
-      toast.error(err.message || "⚠️ Πρόβλημα κατά την απόρριψη ανταλλαγής");
+    } catch {
+      toast.error("⚠️ Σφάλμα επιβεβαίωσης");
     }
   };
 
-  // Ο αιτών αποδέχεται την ανταλλαγή
-  const handleConfirmExchange = async (id) => {
+  // Requester: Απόρριψη ανταλλαγής (σε pending_confirmation)
+  const handleRejectExchange = async (txId) => {
     try {
-      const res = await fetch(`http://localhost:8000/api/transactions/${id}/confirm_exchange/`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Αποτυχία αποδοχής ανταλλαγής");
-      toast.success("✅ Αποδέχτηκες την ανταλλαγή!");
+      const res = await authFetch(
+        `http://localhost:8000/api/transactions/${txId}/reject_exchange/`,
+        { method: "POST" }
+      );
+      if (!res.ok) throw new Error("Αποτυχία απόρριψης ανταλλαγής");
+      toast("🚫 Η ανταλλαγή απορρίφθηκε");
       fetchTransactions();
-    } catch (err) {
-      toast.error(err.message || "⚠️ Πρόβλημα κατά την αποδοχή ανταλλαγής");
+    } catch {
+      toast.error("⚠️ Σφάλμα απόρριψης ανταλλαγής");
     }
   };
 
-  // Ο αιτών απορρίπτει την ανταλλαγή
-  const handleRejectExchange = async (id) => {
+  // Requester (loan): Δήλωση επιστροφής
+  const handleReturnLoan = async (txId) => {
     try {
-      const res = await fetch(`http://localhost:8000/api/transactions/${id}/reject_exchange/`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Αποτυχία απόρριψης ανταλλαγής");
-      toast.success("🚫 Η ανταλλαγή απορρίφθηκε από τον αιτούντα!");
+      const res = await authFetch(
+        `http://localhost:8000/api/transactions/${txId}/confirm_return/`,
+        { method: "POST" }
+      );
+      if (!res.ok) throw new Error("Αποτυχία δήλωσης επιστροφής");
+      toast("↩️ Δήλωσες επιστροφή");
       fetchTransactions();
-    } catch (err) {
-      toast.error(err.message || "⚠️ Πρόβλημα κατά την απόρριψη ανταλλαγής");
+    } catch {
+      toast.error("⚠️ Σφάλμα δήλωσης επιστροφής");
     }
   };
 
-  // Ολοκλήρωση συναλλαγής
-  const handleMarkCompleted = async (id) => {
+  // Owner: Ολοκλήρωση συναλλαγής
+  const handleComplete = async (txId) => {
     try {
-      const res = await fetch(`http://localhost:8000/api/transactions/${id}/mark_completed/`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Αποτυχία ολοκλήρωσης συναλλαγής");
-      toast.success("🏁 Η συναλλαγή ολοκληρώθηκε!");
+      const res = await authFetch(
+        `http://localhost:8000/api/transactions/${txId}/mark_completed/`,
+        { method: "POST" }
+      );
+      if (!res.ok) throw new Error("Αποτυχία ολοκλήρωσης");
+      toast.success("🏁 Η συναλλαγή ολοκληρώθηκε");
       fetchTransactions();
-    } catch (err) {
-      toast.error(err.message || "⚠️ Πρόβλημα κατά την ολοκλήρωση");
+    } catch {
+      toast.error("⚠️ Σφάλμα ολοκλήρωσης");
     }
   };
 
-  // Αποδοχή όρων (loan)
-  const handleAcceptTerms = async (id) => {
+  // Review submit
+  const handleSubmitReview = async (e) => {
+    e.preventDefault();
+    if (!selectedTransaction) return;
     try {
-      const res = await fetch(`http://localhost:8000/api/transactions/${id}/accept_terms/`, {
+      const res = await authFetch("http://localhost:8000/api/reviews/", {
         method: "POST",
-        headers: { Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          transaction: selectedTransaction.id,
+          rating,
+          comment,
+        }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Αποτυχία αποδοχής όρων");
-      toast.success("✅ Αποδέχτηκες τους όρους!");
+      if (!res.ok)
+        throw new Error(data?.error || "Αποτυχία αποστολής αξιολόγησης");
+
+      toast.success("✅ Η αξιολόγηση καταχωρήθηκε!");
+      setSelectedTransaction(null);
+      setRating(5);
+      setComment("");
       fetchTransactions();
     } catch (err) {
-      toast.error(err.message || "⚠️ Πρόβλημα κατά την αποδοχή όρων");
+      toast.error(err.message || "⚠️ Σφάλμα κατά την αξιολόγηση");
     }
   };
+
+  // ===== Παράγωγες λίστες =====
+  const { incoming, outgoing, history } = useMemo(() => {
+    const inc = transactions.filter(
+      (t) =>
+        t.owner?.username?.toLowerCase() === user?.username?.toLowerCase() &&
+        !["completed", "rejected"].includes(t.status)
+    );
+    const out = transactions.filter(
+      (t) =>
+        t.requester?.username?.toLowerCase() ===
+          user?.username?.toLowerCase() &&
+        !["completed", "rejected"].includes(t.status)
+    );
+    const hist = transactions.filter((t) =>
+      ["completed", "rejected"].includes(t.status)
+    );
+    return { incoming: inc, outgoing: out, history: hist };
+  }, [transactions, user]);
 
   if (loading) return <p>Φόρτωση συναλλαγών...</p>;
   if (error) return <p style={{ color: "red" }}>{error}</p>;
-
-  const incoming = transactions.filter((t) => t.owner_username === user?.username);
-  const outgoing = transactions.filter((t) => t.requester_username === user?.username);
 
   return (
     <div style={styles.container}>
       <h1>📬 Οι συναλλαγές μου</h1>
 
-      {/* Εισερχόμενα */}
-      <section style={styles.section}>
-        <h2>📥 Εισερχόμενα αιτήματα</h2>
-        {incoming.length === 0 ? (
-          <p>Δεν υπάρχουν εισερχόμενα αιτήματα.</p>
-        ) : (
-          incoming.map((tx) => (
-            <TransactionCard
-              key={tx.id}
-              tx={tx}
-              handleAction={handleAction}
-              handleSelectExchangeItem={handleSelectExchangeItem}
-              handleOwnerRejectExchange={handleOwnerRejectExchange}
-              handleMarkCompleted={handleMarkCompleted}
-              loadRequesterItems={loadRequesterItems}
-              itemsByUser={itemsByUser}
-              user={user}
-            />
-          ))
-        )}
-      </section>
-
-      {/* Εξερχόμενα */}
-      <section style={styles.section}>
-        <h2>📤 Εξερχόμενα αιτήματα</h2>
-        {outgoing.length === 0 ? (
-          <p>Δεν υπάρχουν εξερχόμενα αιτήματα.</p>
-        ) : (
-          outgoing.map((tx) => (
-            <OutgoingCard
-              key={tx.id}
-              tx={tx}
-              handleConfirmExchange={handleConfirmExchange}
-              handleRejectExchange={handleRejectExchange}
-              handleAcceptTerms={handleAcceptTerms}
-              handleMarkCompleted={handleMarkCompleted}
-              user={user}
-            />
-          ))
-        )}
-      </section>
-    </div>
-  );
-}
-
-/** Εισερχόμενη κάρτα (Owner) */
-function TransactionCard({
-  tx,
-  handleAction,
-  handleSelectExchangeItem,
-  handleOwnerRejectExchange,
-  handleMarkCompleted,
-  loadRequesterItems,
-  itemsByUser,
-  user,
-}) {
-  const [selectedItem, setSelectedItem] = useState("");
-  const [dates, setDates] = useState({ start_date: tx.start_date || "", end_date: tx.end_date || "" });
-
-  const isOwner = tx.owner_username === user?.username;
-
-  useEffect(() => {
-    if (tx.transaction_type === "exchange") loadRequesterItems(tx.requester_username);
-  }, [tx]);
-
-  return (
-    <div style={styles.card}>
-      <p><strong>Από:</strong> {tx.requester_username}</p>
-      <p><strong>Τύπος:</strong> {renderType(tx.transaction_type)}</p>
-      <p><strong>Κατάσταση:</strong> {renderStatus(tx.status)}</p>
-
-      {/* Ανταλλαγή */}
-      {isOwner && tx.transaction_type === "exchange" && tx.status === "pending" && (
-        <>
-          <label>Επίλεξε αντικείμενο του αιτούντος:</label>
-          <select
-            style={styles.select}
-            value={selectedItem}
-            onChange={(e) => setSelectedItem(e.target.value)}
-          >
-            <option value="">-- Επιλέξτε --</option>
-            {(itemsByUser[tx.requester_username] || []).map((it) => (
-              <option key={it.id} value={it.id}>{it.title}</option>
-            ))}
-          </select>
-          <div style={{ display: "flex", gap: "8px", marginTop: "8px" }}>
-            <button
-              style={styles.acceptButton}
-              onClick={() => {
-                if (!selectedItem) return toast.error("Επιλέξτε αντικείμενο!");
-                handleSelectExchangeItem(tx.id, selectedItem);
-              }}
-            >
-              Αποδοχή Ανταλλαγής
-            </button>
-            <button
-              style={styles.rejectButton}
-              onClick={() => handleOwnerRejectExchange(tx.id)}
-            >
-              ❌ Απόρριψη
-            </button>
-          </div>
-        </>
-      )}
-
-      {/* Δανεισμός */}
-      {tx.transaction_type === "loan" && isOwner && tx.status === "pending" && (
-        <>
-          <div style={{ marginTop: "10px" }}>
-            <label>📅 Έναρξη:</label>
-            <input
-              type="date"
-              value={dates.start_date}
-              onChange={(e) => setDates((prev) => ({ ...prev, start_date: e.target.value }))}
-              style={styles.dateInput}
-            />
-            <label>📅 Λήξη:</label>
-            <input
-              type="date"
-              value={dates.end_date}
-              onChange={(e) => setDates((prev) => ({ ...prev, end_date: e.target.value }))}
-              style={styles.dateInput}
-            />
-          </div>
-          <button
-            style={styles.acceptButton}
-            onClick={() => {
-              if (!dates.start_date || !dates.end_date)
-                return toast.error("Ορίστε ημερομηνίες δανεισμού!");
-              handleAction(tx.id, {
-                status: "pending_terms",
-                start_date: dates.start_date,
-                end_date: dates.end_date,
-              });
-            }}
-          >
-            ✅ Αποδοχή Δανεισμού
-          </button>
-        </>
-      )}
-
-      {/* Ολοκλήρωση */}
-      {isOwner && tx.status === "accepted" && (
-        <button style={styles.returnButton} onClick={() => handleMarkCompleted(tx.id)}>
-          🏁 Ολοκλήρωση
+      {/* Tabs */}
+      <div style={styles.tabContainer}>
+        <button
+          style={activeTab === "active" ? styles.activeTab : styles.tab}
+          onClick={() => setActiveTab("active")}
+        >
+          ⚙️ Ενεργές
         </button>
+        <button
+          style={activeTab === "history" ? styles.activeTab : styles.tab}
+          onClick={() => setActiveTab("history")}
+        >
+          🏁 Ολοκληρωμένες / Απορριφθείσες
+        </button>
+      </div>
+
+      {/* Ενεργές */}
+      {activeTab === "active" && (
+        <>
+          <section style={styles.section}>
+            <h2>📥 Εισερχόμενα αιτήματα</h2>
+            {incoming.length === 0 ? (
+              <p>Δεν υπάρχουν εισερχόμενα αιτήματα.</p>
+            ) : (
+              incoming.map((tx) => (
+                <TransactionCard
+                  key={tx.id}
+                  tx={tx}
+                  user={user}
+                  itemsByUser={itemsByUser}
+                  setActiveChat={setActiveChat}
+                  // actions
+                  onAccept={() => handleAccept(tx)}
+                  onReject={() => handleReject(tx.id)}
+                  onOpenSelect={() => openSelectItemModal(tx)}
+                  onComplete={() => handleComplete(tx.id)}
+                  loanDates={loanDates[tx.id] || {}}
+                  setLoanDates={(dates) =>
+                    setLoanDates((prev) => ({ ...prev, [tx.id]: dates }))
+                  }
+                />
+              ))
+            )}
+          </section>
+
+          <section style={styles.section}>
+            <h2>📤 Εξερχόμενα αιτήματα</h2>
+            {outgoing.length === 0 ? (
+              <p>Δεν υπάρχουν εξερχόμενα αιτήματα.</p>
+            ) : (
+              outgoing.map((tx) => (
+                <OutgoingCard
+                  key={tx.id}
+                  tx={tx}
+                  user={user}
+                  setActiveChat={setActiveChat}
+                  onConfirmExchange={() => handleConfirmExchange(tx.id)}
+                  onRejectExchange={() => handleRejectExchange(tx.id)}
+                  onReturnLoan={() => handleReturnLoan(tx.id)}
+                />
+              ))
+            )}
+          </section>
+        </>
       )}
-    </div>
-  );
-}
 
-/** Εξερχόμενη κάρτα (Requester) */
-function OutgoingCard({ tx, handleConfirmExchange, handleRejectExchange, handleAcceptTerms, handleMarkCompleted }) {
-  return (
-    <div style={styles.card}>
-      <p><strong>Προς:</strong> {tx.owner_username}</p>
-      <p><strong>Τύπος:</strong> {renderType(tx.transaction_type)}</p>
-      <p><strong>Κατάσταση:</strong> {renderStatus(tx.status)}</p>
+      {/* Ιστορικό */}
+      {activeTab === "history" && (
+        <section style={styles.section}>
+          <h2>🏁 Ολοκληρωμένες / Απορριφθείσες</h2>
+          {history.length === 0 ? (
+            <p>Δεν υπάρχουν ολοκληρωμένες ή απορριφθείσες συναλλαγές.</p>
+          ) : (
+            history.map((tx) => (
+              <div key={tx.id} style={styles.card}>
+                <p>
+                  <strong>Αντικείμενο:</strong>{" "}
+                  {tx.item ? (
+                    <Link to={`/items/${tx.item}`} style={styles.link}>
+                      {tx.item_title}
+                    </Link>
+                  ) : (
+                    "(χωρίς τίτλο)"
+                  )}
+                </p>
+                <p>
+                  <strong>Κατάσταση:</strong> {renderStatus(tx.status)}
+                </p>
+                <p>
+                  <strong>Από:</strong> {tx.requester?.username} →{" "}
+                  <strong>Προς:</strong> {tx.owner?.username}
+                </p>
+                {tx.end_date && (
+                  <p>
+                    <strong>Ημ/νία:</strong>{" "}
+                    {new Date(tx.end_date).toLocaleDateString("el-GR")}
+                  </p>
+                )}
 
-      {/* Επιβεβαίωση ή Απόρριψη Ανταλλαγής */}
-      {tx.transaction_type === "exchange" && tx.status === "pending_confirmation" && (
-        <div style={{ display: "flex", gap: "8px" }}>
-          <button style={styles.acceptButton} onClick={() => handleConfirmExchange(tx.id)}>
-            ✅ Αποδέχομαι
-          </button>
-          <button style={styles.rejectButton} onClick={() => handleRejectExchange(tx.id)}>
-            ❌ Απόρριψη
-          </button>
+                {tx.reviews && tx.reviews.length > 0 ? (
+                  <div style={styles.reviewBox}>
+                    <p>⭐ {tx.reviews[0].rating}/5</p>
+                    {tx.reviews[0].comment && (
+                      <p>
+                        💬 <em>{tx.reviews[0].comment}</em>
+                      </p>
+                    )}
+                  </div>
+                ) : tx.status === "completed" ? (
+                  <button
+                    style={styles.reviewButton}
+                    onClick={() => {
+                      setSelectedTransaction({ ...tx });
+                      setTimeout(
+                        () =>
+                          window.scrollTo({
+                            top: document.body.scrollHeight,
+                            behavior: "smooth",
+                          }),
+                        200
+                      );
+                    }}
+                  >
+                    ✨ Αξιολόγηση
+                  </button>
+                ) : null}
+              </div>
+            ))
+          )}
+        </section>
+      )}
+
+      {/* Floating Chat */}
+      <AnimatePresence>
+        {activeChat && (
+          <motion.div
+            key="chat"
+            initial={{ opacity: 0, y: 100, scale: 0.9 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 100, scale: 0.9 }}
+            transition={{ type: "spring", stiffness: 100, damping: 15 }}
+            style={styles.chatPopup}
+          >
+            <div style={styles.chatHeader}>
+              <span>💬 Συναλλαγή #{activeChat.transactionId}</span>
+              <button
+                onClick={() => setActiveChat(null)}
+                style={styles.closeChatButton}
+              >
+                ❌
+              </button>
+            </div>
+            <ChatBox
+              transactionId={activeChat.transactionId}
+              receiverId={activeChat.receiverId}
+            />
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Review Form */}
+      {selectedTransaction && (
+        <div style={styles.reviewFormContainer}>
+          <h3>
+            ✨ Αξιολόγηση συναλλαγής #{selectedTransaction.id} (
+            {selectedTransaction.item_title})
+          </h3>
+          <form onSubmit={handleSubmitReview} style={styles.form}>
+            <label>Βαθμολογία:</label>
+            <select
+              value={rating}
+              onChange={(e) => setRating(Number(e.target.value))}
+              style={styles.select}
+            >
+              {[5, 4, 3, 2, 1].map((r) => (
+                <option key={r} value={r}>
+                  {r} ⭐
+                </option>
+              ))}
+            </select>
+
+            <label>Σχόλιο:</label>
+            <textarea
+              value={comment}
+              onChange={(e) => setComment(e.target.value)}
+              placeholder="Προαιρετικό σχόλιο..."
+              style={styles.textarea}
+            />
+
+            <div style={{ display: "flex", gap: "10px" }}>
+              <button type="submit" style={styles.submitButton}>
+                ✅ Υποβολή
+              </button>
+              <button
+                type="button"
+                style={styles.cancelButton}
+                onClick={() => setSelectedTransaction(null)}
+              >
+                ❌ Άκυρο
+              </button>
+            </div>
+          </form>
         </div>
       )}
 
-      {/* Όροι δανεισμού */}
-      {tx.status === "pending_terms" && (
-        <button style={styles.acceptButton} onClick={() => handleAcceptTerms(tx.id)}>
-          ✅ Αποδέχομαι τους όρους
-        </button>
-      )}
+      {/* Exchange Select Modal */}
+      <AnimatePresence>
+        {exchangeModalOpen && exchangeModalTx && (
+          <motion.div
+            key="exchangeModal"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            style={styles.modalOverlay}
+            onClick={() => {
+              setExchangeModalOpen(false);
+              setExchangeModalTx(null);
+            }}
+          >
+            <motion.div
+              initial={{ y: 40, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              exit={{ y: 40, opacity: 0 }}
+              transition={{ type: "spring", stiffness: 140, damping: 16 }}
+              style={styles.modalContent}
+              onClick={(e) => e.stopPropagation()} // block overlay click
+            >
+              <div style={styles.modalHeader}>
+                <h3 style={{ margin: 0 }}>
+                  🎁 Επιλογή αντικειμένου από {exchangeModalTx.requester?.username}
+                </h3>
+                <button
+                  style={styles.modalClose}
+                  onClick={() => {
+                    setExchangeModalOpen(false);
+                    setExchangeModalTx(null);
+                  }}
+                >
+                  ✖
+                </button>
+              </div>
 
-      {tx.status === "returned_by_requester" && (
-        <p style={{ color: "orange" }}>⏳ Αναμονή επιβεβαίωσης ιδιοκτήτη</p>
-      )}
+              <div style={styles.modalBody}>
+                {(() => {
+                  const u = exchangeModalTx.requester?.username;
+                  const list = u ? itemsByUser[u] || [] : [];
+                  if (list.length === 0)
+                    return <p>Δεν βρέθηκαν αντικείμενα για επιλογή.</p>;
+                  return (
+                    <div style={styles.itemsGrid}>
+                      {list.map((it) => (
+                        <div key={it.id} style={styles.itemCard}>
+                          <div style={{ display: "flex", justifyContent: "space-between" }}>
+                            <strong>{it.title}</strong>
+                            <span>
+                              {renderType(it.transaction_type)}
+                            </span>
+                          </div>
+                          <p style={{ marginTop: 6 }}>
+                            {it.description?.slice(0, 120) || "—"}
+                          </p>
+                          <button
+                            style={styles.primaryBtn}
+                            onClick={() =>
+                              handleSelectExchangeItem(
+                                exchangeModalTx.id,
+                                it.id
+                              )
+                            }
+                          >
+                            ✅ Επιλογή
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })()}
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
 
-      {tx.status === "completed" && (
-        <p style={{ color: "green" }}>🏁 Ολοκληρωμένη συναλλαγή</p>
+/* ---------------------- Κάρτες ---------------------- */
+
+function TransactionCard({
+  tx,
+  user,
+  setActiveChat,
+  onAccept,
+  onReject,
+  onOpenSelect,
+  onComplete,
+  loanDates,
+  setLoanDates,
+}) {
+  const isOwner = tx.owner?.username === user?.username;
+
+  return (
+    <div style={styles.card}>
+      <p>
+        <strong>Από:</strong>{" "}
+        <Link to={`/profile/${tx.requester?.id}`} style={styles.link}>
+          {tx.requester?.username}
+        </Link>
+      </p>
+      <p>
+        <strong>Τύπος:</strong> {renderType(tx.transaction_type)}
+      </p>
+      <p>
+        <strong>Κατάσταση:</strong> {renderStatus(tx.status)}
+      </p>
+
+      {/* Κουμπί Chat */}
+      <button
+        style={styles.chatButton}
+        onClick={() =>
+          setActiveChat({ transactionId: tx.id, receiverId: tx.requester?.id })
+        }
+      >
+        💬 Συνομιλία
+      </button>
+
+      {/* Δράσεις OWNER */}
+      {isOwner && (
+        <div style={{ marginTop: 10, display: "flex", gap: 8, flexWrap: "wrap" }}>
+          {/* PENDING: Accept / Reject */}
+          {tx.status === "pending" && (
+            <>
+              {tx.transaction_type === "loan" && (
+                <div style={styles.inlineRow}>
+                  <input
+                    type="date"
+                    value={loanDates.start_date || ""}
+                    onChange={(e) =>
+                      setLoanDates({
+                        ...loanDates,
+                        start_date: e.target.value,
+                      })
+                    }
+                    style={styles.dateInput}
+                    placeholder="Έναρξη"
+                  />
+                  <input
+                    type="date"
+                    value={loanDates.end_date || ""}
+                    onChange={(e) =>
+                      setLoanDates({
+                        ...loanDates,
+                        end_date: e.target.value,
+                      })
+                    }
+                    style={styles.dateInput}
+                    placeholder="Λήξη"
+                  />
+                </div>
+              )}
+
+              <button style={styles.primaryBtn} onClick={onAccept}>
+                ✅ Αποδοχή
+              </button>
+              <button style={styles.dangerBtn} onClick={onReject}>
+                ❌ Απόρριψη
+              </button>
+
+              {/* Exchange: επιλογή αντικειμένου από requester */}
+              {tx.transaction_type === "exchange" && (
+                <button style={styles.secondaryBtn} onClick={onOpenSelect}>
+                  🎁 Επιλογή αντικειμένου
+                </button>
+              )}
+            </>
+          )}
+
+          {/* ACCEPTED: Owner μπορεί να ολοκληρώσει (σε loan μετά από επιστροφή/ή και απευθείας αν συμφωνήσατε) */}
+          {tx.status === "accepted" && (
+            <button style={styles.primaryBtn} onClick={onComplete}>
+              🏁 Ολοκλήρωση
+            </button>
+          )}
+
+          {/* RETURNED_BY_REQUESTER: Owner ολοκληρώνει (loan flow) */}
+          {tx.status === "returned_by_requester" && (
+            <button style={styles.primaryBtn} onClick={onComplete}>
+              🏁 Επιβεβαίωση & Ολοκλήρωση
+            </button>
+          )}
+        </div>
       )}
     </div>
   );
 }
 
-// Helpers
+function OutgoingCard({
+  tx,
+  user,
+  setActiveChat,
+  onConfirmExchange,
+  onRejectExchange,
+  onReturnLoan,
+}) {
+  const isRequester = tx.requester?.username === user?.username;
+
+  return (
+    <div style={styles.card}>
+      <p>
+        <strong>Προς:</strong>{" "}
+        <Link to={`/profile/${tx.owner?.id}`} style={styles.link}>
+          {tx.owner?.username}
+        </Link>
+      </p>
+      <p>
+        <strong>Τύπος:</strong> {renderType(tx.transaction_type)}
+      </p>
+      <p>
+        <strong>Κατάσταση:</strong> {renderStatus(tx.status)}
+      </p>
+
+      {/* Κουμπί Chat */}
+      <button
+        style={styles.chatButton}
+        onClick={() =>
+          setActiveChat({ transactionId: tx.id, receiverId: tx.owner?.id })
+        }
+      >
+        💬 Συνομιλία
+      </button>
+
+      {/* Δράσεις REQUESTER */}
+      {isRequester && (
+        <div style={{ marginTop: 10, display: "flex", gap: 8, flexWrap: "wrap" }}>
+          {/* Ανταλλαγή: Pending confirmation → Confirm / Reject */}
+          {tx.transaction_type === "exchange" &&
+            tx.status === "pending_confirmation" && (
+              <>
+                <button style={styles.primaryBtn} onClick={onConfirmExchange}>
+                  🔁 Επιβεβαίωση ανταλλαγής
+                </button>
+                <button style={styles.dangerBtn} onClick={onRejectExchange}>
+                  🚫 Απόρριψη
+                </button>
+              </>
+            )}
+
+          {/* Δανεισμός: Accepted → Δήλωση επιστροφής */}
+          {tx.transaction_type === "loan" && tx.status === "accepted" && (
+            <button style={styles.secondaryBtn} onClick={onReturnLoan}>
+              ↩️ Δήλωση επιστροφής
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ---------------------- Helpers & Styling ---------------------- */
 function renderStatus(status) {
   switch (status) {
-    case "pending": return "⏳ Σε εκκρεμότητα";
-    case "pending_terms": return "📝 Εκκρεμεί αποδοχή όρων";
-    case "pending_confirmation": return "🔁 Αναμονή επιβεβαίωσης αιτούντα";
-    case "accepted": return "✅ Ενεργή";
-    case "returned_by_requester": return "📦 Δηλώθηκε επιστροφή";
-    case "rejected": return "❌ Απορριφθείσα";
-    case "cancelled": return "🚫 Ακυρωμένη";
-    case "completed": return "🏁 Ολοκληρωμένη";
-    default: return status;
+    case "pending":
+      return "⏳ Σε εκκρεμότητα";
+    case "pending_confirmation":
+      return "🕒 Αναμένει επιβεβαίωση";
+    case "pending_terms":
+      return "📄 Αναμένει όρους";
+    case "accepted":
+      return "✅ Ενεργή";
+    case "returned_by_requester":
+      return "↩️ Δηλώθηκε επιστροφή";
+    case "rejected":
+      return "❌ Απορριφθείσα";
+    case "completed":
+      return "🏁 Ολοκληρωμένη";
+    default:
+      return status;
   }
 }
 
 function renderType(type) {
   switch (type) {
-    case "exchange": return "🔁 Ανταλλαγή";
-    case "loan": return "🤝 Δανεισμός";
-    case "either": return "🔁🤝 Ανταλλαγή ή Δανεισμός";
-    default: return type;
+    case "exchange":
+      return "🔁 Ανταλλαγή";
+    case "loan":
+      return "🤝 Δανεισμός";
+    case "either":
+      return "🔁🤝 Ανταλλαγή ή Δανεισμός";
+    default:
+      return type;
   }
 }
 
-// Styling
+/* Styling */
 const styles = {
-  container: { padding: "20px", maxWidth: "800px", margin: "0 auto" },
+  container: { padding: "20px", maxWidth: "900px", margin: "0 auto" },
   section: { marginBottom: "30px" },
+  tabContainer: {
+    display: "flex",
+    justifyContent: "center",
+    gap: "10px",
+    marginBottom: "20px",
+  },
+  tab: {
+    background: "#e0e0e0",
+    border: "none",
+    padding: "8px 16px",
+    borderRadius: "8px",
+    cursor: "pointer",
+  },
+  activeTab: {
+    background: "#007bff",
+    color: "white",
+    border: "none",
+    padding: "8px 16px",
+    borderRadius: "8px",
+    cursor: "pointer",
+    fontWeight: "bold",
+  },
   card: {
     background: "#f9f9f9",
     border: "1px solid #ddd",
@@ -406,9 +825,15 @@ const styles = {
     padding: "15px",
     marginBottom: "15px",
   },
-  select: { width: "100%", padding: "6px", marginTop: "6px" },
-  acceptButton: {
-    background: "green",
+  link: { color: "#007bff", textDecoration: "none" },
+  reviewBox: {
+    background: "#f1f1f1",
+    padding: "8px",
+    borderRadius: "6px",
+    marginTop: "8px",
+  },
+  reviewButton: {
+    background: "#ff9800",
     color: "white",
     border: "none",
     padding: "8px 12px",
@@ -416,14 +841,38 @@ const styles = {
     cursor: "pointer",
     marginTop: "10px",
   },
-  rejectButton: {
-    background: "red",
+  chatButton: {
+    background: "#17a2b8",
     color: "white",
     border: "none",
     padding: "8px 12px",
     borderRadius: "6px",
     cursor: "pointer",
     marginTop: "10px",
+  },
+  primaryBtn: {
+    background: "#0f9d58",
+    color: "#fff",
+    border: "none",
+    padding: "8px 12px",
+    borderRadius: "6px",
+    cursor: "pointer",
+  },
+  secondaryBtn: {
+    background: "#007bff",
+    color: "#fff",
+    border: "none",
+    padding: "8px 12px",
+    borderRadius: "6px",
+    cursor: "pointer",
+  },
+  dangerBtn: {
+    background: "#e53935",
+    color: "#fff",
+    border: "none",
+    padding: "8px 12px",
+    borderRadius: "6px",
+    cursor: "pointer",
   },
   returnButton: {
     background: "#007bff",
@@ -433,5 +882,121 @@ const styles = {
     borderRadius: "6px",
     cursor: "pointer",
     marginTop: "10px",
+  },
+  inlineRow: { display: "flex", gap: 8, alignItems: "center" },
+  dateInput: {
+    border: "1px solid #ccc",
+    borderRadius: "6px",
+    padding: "6px 8px",
+  },
+  chatPopup: {
+    position: "fixed",
+    bottom: "20px",
+    right: "20px",
+    width: "400px",
+    height: "520px",
+    background: "#fff",
+    border: "1px solid #ccc",
+    borderRadius: "12px",
+    boxShadow: "0 8px 25px rgba(0,0,0,0.3)",
+    zIndex: 1000,
+    overflow: "hidden",
+    display: "flex",
+    flexDirection: "column",
+  },
+  chatHeader: {
+    background: "#007bff",
+    color: "#fff",
+    padding: "10px 15px",
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    fontWeight: "bold",
+  },
+  closeChatButton: {
+    background: "transparent",
+    border: "none",
+    color: "#fff",
+    cursor: "pointer",
+    fontSize: "1.2rem",
+  },
+  reviewFormContainer: {
+    background: "#fff3cd",
+    border: "1px solid #ffeeba",
+    borderRadius: "10px",
+    padding: "20px",
+    marginTop: "40px",
+  },
+  form: { display: "flex", flexDirection: "column", gap: "10px" },
+  textarea: {
+    minHeight: "80px",
+    resize: "vertical",
+    padding: "6px",
+    borderRadius: "6px",
+    border: "1px solid #ccc",
+  },
+  submitButton: {
+    background: "green",
+    color: "white",
+    border: "none",
+    padding: "8px 12px",
+    borderRadius: "6px",
+    cursor: "pointer",
+  },
+  cancelButton: {
+    background: "gray",
+    color: "white",
+    border: "none",
+    padding: "8px 12px",
+    borderRadius: "6px",
+    cursor: "pointer",
+  },
+
+  /* Modal overlay */
+  modalOverlay: {
+    position: "fixed",
+    inset: 0,
+    background: "rgba(0,0,0,0.4)",
+    display: "flex",
+    alignItems: "flex-end",
+    justifyContent: "center",
+    zIndex: 1100,
+  },
+  modalContent: {
+    width: "100%",
+    maxWidth: 720,
+    background: "#fff",
+    borderTopLeftRadius: 12,
+    borderTopRightRadius: 12,
+    padding: 16,
+    boxShadow: "0 -8px 24px rgba(0,0,0,0.25)",
+  },
+  modalHeader: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    borderBottom: "1px solid #eee",
+    paddingBottom: 8,
+  },
+  modalClose: {
+    background: "transparent",
+    border: "none",
+    fontSize: "1.2rem",
+    cursor: "pointer",
+  },
+  modalBody: { paddingTop: 12, paddingBottom: 12 },
+  itemsGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fill,minmax(240px,1fr))",
+    gap: 12,
+  },
+  itemCard: {
+    border: "1px solid #e5e5e5",
+    borderRadius: 10,
+    padding: 12,
+    background: "#fafafa",
+    display: "flex",
+    flexDirection: "column",
+    gap: 8,
   },
 };

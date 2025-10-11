@@ -1,15 +1,52 @@
 from django.contrib.auth import get_user_model
 from rest_framework import serializers
 from rest_framework_simplejwt.tokens import RefreshToken
+from django.db.models import Q, Avg
+from transactions.models import Transaction, Review
 
 User = get_user_model()
 
 
-# Εμφάνιση στοιχείων χρήστη (π.χ. στο /me/)
 class UserSerializer(serializers.ModelSerializer):
+    average_rating = serializers.SerializerMethodField()
+    total_completed_transactions = serializers.SerializerMethodField()
+
     class Meta:
         model = User
-        fields = ['id', 'username', 'email', 'first_name', 'last_name']
+        fields = [
+            'id',
+            'username',
+            'email',
+            'first_name',
+            'last_name',
+            'average_rating',
+            'total_completed_transactions',
+        ]
+
+    # Μέση αξιολόγηση
+    def get_average_rating(self, obj):
+        avg = obj.received_reviews.aggregate(Avg('rating'))['rating__avg']
+        return round(avg or 0, 2)
+
+    # Πλήθος ολοκληρωμένων συναλλαγών
+    def get_total_completed_transactions(self, obj):
+        return Transaction.objects.filter(
+            Q(requester=obj) | Q(owner=obj),
+            status='completed'
+        ).count()
+
+    # Προσθήκη reviews στο τελικό output χωρίς circular import
+    def to_representation(self, instance):
+        from transactions.serializers import ReviewSerializer  # lazy import
+        representation = super().to_representation(instance)
+
+        reviews = getattr(instance, "received_reviews", None)
+        if reviews is not None:
+            representation["reviews_received"] = ReviewSerializer(reviews, many=True).data
+        else:
+            representation["reviews_received"] = []
+
+        return representation
 
 
 # Εγγραφή νέου χρήστη (Register)
@@ -29,7 +66,6 @@ class RegisterSerializer(serializers.ModelSerializer):
         return user
 
 
-# Serializer που επιστρέφει JWT tokens μετά το register (προαιρετικό)
 class RegisterWithTokenSerializer(RegisterSerializer):
     token = serializers.SerializerMethodField()
 

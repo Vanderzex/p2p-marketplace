@@ -1,4 +1,4 @@
-from rest_framework import generics, permissions, status
+from rest_framework import generics, permissions, status, viewsets
 from rest_framework.response import Response
 from django.contrib.auth import get_user_model
 from .serializers import RegisterSerializer, UserSerializer
@@ -30,3 +30,12 @@ class MeView(generics.RetrieveAPIView):
 
     def get_object(self):
         return self.request.user
+
+# Προβολή προφίλ άλλων χρηστών
+class UserViewSet(viewsets.ReadOnlyModelViewSet):
+    """
+    Επιτρέπει GET /api/users/ και GET /api/users/<id>/
+    """
+    queryset = User.objects.all().order_by('id')
+    serializer_class = UserSerializer
+    permission_classes = [permissions.AllowAny]

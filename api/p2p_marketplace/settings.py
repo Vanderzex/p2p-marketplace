@@ -43,6 +43,8 @@ INSTALLED_APPS = [
     'items',
     'users',
     'transactions',
+    'chat',
+    'notifications',
 ]
 
 MIDDLEWARE = [

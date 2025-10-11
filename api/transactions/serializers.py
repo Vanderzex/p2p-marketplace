@@ -1,13 +1,61 @@
 from rest_framework import serializers
-from .models import Transaction
-from items.models import Item
+from .models import Transaction, Review
+from users.serializers import UserSerializer  # ✅ για nested owner/requester
+from items.serializers import ItemSerializer
+
+
+from rest_framework import serializers
+from .models import Review
+
+class ReviewSerializer(serializers.ModelSerializer):
+    reviewer = serializers.SerializerMethodField()
+    reviewed_user = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Review
+        fields = [
+            'id',
+            'transaction',
+            'reviewer',
+            'reviewed_user',
+            'rating',
+            'comment',
+            'created_at',
+        ]
+        read_only_fields = ['id', 'reviewer', 'reviewed_user', 'created_at']
+
+    # Επιστρέφει τα βασικά στοιχεία του reviewer
+    def get_reviewer(self, obj):
+        if obj.reviewer:
+            return {
+                "id": obj.reviewer.id,
+                "username": obj.reviewer.username,
+                "email": obj.reviewer.email,
+            }
+        return None
+
+    # Επιστρέφει τα βασικά στοιχεία του χρήστη που αξιολογείται
+    def get_reviewed_user(self, obj):
+        if obj.reviewed_user:
+            return {
+                "id": obj.reviewed_user.id,
+                "username": obj.reviewed_user.username,
+                "email": obj.reviewed_user.email,
+            }
+        return None
 
 
 class TransactionSerializer(serializers.ModelSerializer):
-    requester_username = serializers.ReadOnlyField(source='requester.username')
-    owner_username = serializers.ReadOnlyField(source='owner.username')
+    # Nested user info ώστε React να διαβάζει tx.owner.username / tx.requester.username
+    owner = UserSerializer(read_only=True)
+    requester = UserSerializer(read_only=True)
+
+    # Εμφάνιση τίτλων αντικειμένων
     item_title = serializers.ReadOnlyField(source='item.title')
     requested_item_title = serializers.ReadOnlyField(source='requested_item.title', default=None)
+
+    # Nested reviews
+    reviews = ReviewSerializer(many=True, read_only=True)
 
     class Meta:
         model = Transaction
@@ -27,10 +75,10 @@ class TransactionSerializer(serializers.ModelSerializer):
             'created_at',
             'returned_at',
             # helper fields
-            'requester_username',
-            'owner_username',
             'item_title',
             'requested_item_title',
+            # reviews
+            'reviews',
         ]
         read_only_fields = [
             'id',
@@ -43,7 +91,7 @@ class TransactionSerializer(serializers.ModelSerializer):
 
     def validate(self, data):
         """
-          Ελέγχει:
+        Ελέγχει:
         - ότι ο τύπος συναλλαγής (loan/exchange) επιτρέπεται από το Item
         - ότι ημερομηνίες & όροι υπάρχουν ΜΟΝΟ για loan
         """
@@ -87,7 +135,7 @@ class TransactionSerializer(serializers.ModelSerializer):
             data['terms'] = None
             data['borrower_accepted_terms'] = False
 
-        # --- Either (προαιρετικά, χωρίς περιορισμό) ---
+        # --- Either (χωρίς περιορισμό) ---
         elif requested_type == 'either':
             pass
 

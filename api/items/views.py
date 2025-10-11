@@ -2,7 +2,6 @@ from rest_framework import viewsets, permissions, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from django.contrib.auth import get_user_model
-
 from .models import Item, ItemImage
 from .serializers import ItemSerializer, ItemImageSerializer
 from .permissions import IsOwnerOrReadOnly
@@ -18,7 +17,7 @@ class ItemViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         serializer.save(owner=self.request.user)
 
-    # 📸 Ανέβασμα επιπλέον εικόνας
+    # Ανέβασμα επιπλέον εικόνας
     @action(detail=True, methods=['post'], permission_classes=[permissions.IsAuthenticated])
     def upload_image(self, request, pk=None):
         item = self.get_object()

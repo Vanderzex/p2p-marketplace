@@ -1,8 +1,8 @@
 from django.db import models
 from django.conf import settings
 from django.core.exceptions import ValidationError
-from items.models import Item
 from django.utils import timezone
+from items.models import Item
 
 
 class Transaction(models.Model):
@@ -12,14 +12,14 @@ class Transaction(models.Model):
     """
 
     STATUS_CHOICES = [
-    ('pending', 'Σε εκκρεμότητα'),
-    ('pending_terms', 'Εκκρεμεί αποδοχή όρων'),
-    ('pending_confirmation', 'Εκκρεμεί επιβεβαίωση'),
-    ('accepted', 'Ενεργή'),
-    ('rejected', 'Απορριφθείσα'),
-    ('cancelled', 'Ακυρωμένη'),
-    ('completed', 'Ολοκληρωμένη'),
-]
+        ('pending', 'Σε εκκρεμότητα'),
+        ('pending_terms', 'Εκκρεμεί αποδοχή όρων'),
+        ('pending_confirmation', 'Εκκρεμεί επιβεβαίωση'),
+        ('accepted', 'Ενεργή'),
+        ('rejected', 'Απορριφθείσα'),
+        ('cancelled', 'Ακυρωμένη'),
+        ('completed', 'Ολοκληρωμένη'),
+    ]
 
     TRANSACTION_TYPE_CHOICES = [
         ('exchange', 'Ανταλλαγή'),
@@ -118,6 +118,7 @@ class Transaction(models.Model):
 
     def clean(self):
         """
+        Έλεγχοι εγκυρότητας ανάλογα με το είδος συναλλαγής
         """
         # ----- ΔΑΝΕΙΣΜΟΣ -----
         if self.transaction_type == 'loan':
@@ -125,14 +126,11 @@ class Transaction(models.Model):
                 raise ValidationError("Πρέπει να οριστούν ημερομηνίες για δανεισμό.")
             if self.start_date > self.end_date:
                 raise ValidationError("Η ημερομηνία λήξης πρέπει να είναι μετά την έναρξη.")
-            # Οι όροι είναι προαιρετικοί αλλά λογικά αποδεκτοί
-            # Αν δεν έχει αποδεχθεί τους όρους, δεν μπορεί να γίνει accepted
             if self.status == 'accepted' and not self.borrower_accepted_terms:
                 raise ValidationError("Ο αιτών πρέπει να αποδεχθεί τους όρους δανεισμού πριν εγκριθεί η συναλλαγή.")
 
         # ----- ΑΝΤΑΛΛΑΓΗ -----
         elif self.transaction_type == 'exchange':
-            # Απαγορεύονται ημερομηνίες & όροι
             if self.start_date or self.end_date or self.terms:
                 raise ValidationError("Δεν επιτρέπονται ημερομηνίες ή όροι για ανταλλαγή.")
             self.start_date = None
@@ -142,17 +140,49 @@ class Transaction(models.Model):
 
         # ----- ΕΙΤΕ -----
         elif self.transaction_type == 'either':
-            # Επιτρέπουμε και τα δύο, χωρίς υποχρέωση
             pass
 
     def __str__(self):
-        """
-        Αναπαράσταση της συναλλαγής σε μορφή κειμένου
-        π.χ. "userA → userB (Ανταλλαγή)"
-        """
         return f"{self.requester} → {self.owner} ({self.get_transaction_type_display()})"
 
     class Meta:
         verbose_name = "Συναλλαγή"
         verbose_name_plural = "Συναλλαγές"
         ordering = ['-created_at']
+
+class Review(models.Model):
+    """
+    Αξιολόγηση χρήστη μετά από ολοκληρωμένη συναλλαγή.
+    """
+    transaction = models.ForeignKey(
+        Transaction,
+        on_delete=models.CASCADE,
+        related_name="reviews",
+        verbose_name="Συναλλαγή"
+    )
+    reviewer = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="given_reviews",
+        verbose_name="Αξιολογητής"
+    )
+    reviewed_user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="received_reviews",
+        verbose_name="Αξιολογούμενος"
+    )
+
+    rating = models.PositiveSmallIntegerField(default=5, verbose_name="Αστέρια (1-5)")
+    comment = models.TextField(blank=True, null=True, verbose_name="Σχόλιο")
+
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Ημερομηνία Δημιουργίας")
+
+    class Meta:
+        unique_together = ('transaction', 'reviewer')
+        ordering = ['-created_at']
+        verbose_name = "Αξιολόγηση"
+        verbose_name_plural = "Αξιολογήσεις"
+
+    def __str__(self):
+        return f"{self.reviewer} → {self.reviewed_user} ({self.rating}⭐)"
