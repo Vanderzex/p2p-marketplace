@@ -5,7 +5,7 @@ import toast from "react-hot-toast";
 
 export default function MyItemsPage() {
   const { user, token } = useAuth();
-  const { username } = useParams(); // 🆕 αν υπάρχει στη διεύθυνση, βλέπουμε άλλον χρήστη
+  const { username } = useParams(); // 🆕 Αν υπάρχει στη διεύθυνση, βλέπουμε άλλον χρήστη
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -27,16 +27,21 @@ export default function MyItemsPage() {
 
         const res = await fetch(url, { headers });
         if (!res.ok) throw new Error("Αποτυχία φόρτωσης αντικειμένων");
+
         const data = await res.json();
 
+        // ✅ Εξασφαλίζουμε ότι έχουμε πάντα πίνακα αντικειμένων
+        const results = Array.isArray(data) ? data : data.results || [];
+
+        // 🔍 Αν είναι δικό μας προφίλ → φιλτράρουμε, αλλιώς κρατάμε όλα
         const filtered = isOwnProfile
-          ? data.filter(
+          ? results.filter(
               (item) =>
                 item.owner === user.username ||
                 item.owner_username === user.username ||
                 item.owner?.username === user.username
             )
-          : data;
+          : results;
 
         setItems(filtered);
       } catch (err) {
@@ -55,7 +60,10 @@ export default function MyItemsPage() {
   return (
     <div style={styles.container}>
       <h1>
-        📦 {isOwnProfile ? "Τα αντικείμενά μου" : `Αντικείμενα του χρήστη ${username}`}
+        📦{" "}
+        {isOwnProfile
+          ? "Τα αντικείμενά μου"
+          : `Αντικείμενα του χρήστη ${username}`}
       </h1>
 
       {items.length === 0 ? (

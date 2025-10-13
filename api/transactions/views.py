@@ -19,6 +19,7 @@ class TransactionViewSet(viewsets.ModelViewSet):
     # Εμφάνιση μόνο συναλλαγών που αφορούν τον χρήστη
     def get_queryset(self):
         user = self.request.user
+        #user = getattr(self.request, "user", None)
         return Transaction.objects.filter(Q(requester=user) | Q(owner=user)).order_by('-created_at')
 
     # Δημιουργία νέας συναλλαγής

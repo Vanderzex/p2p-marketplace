@@ -40,6 +40,8 @@ class ItemSerializer(serializers.ModelSerializer):
             "owner_id",
             "owner_username",
             "transactions",
+            "category",
+            "delivery_method",
         ]
 
     # Lazy import για αποφυγή circular import (π.χ. items ↔ transactions)

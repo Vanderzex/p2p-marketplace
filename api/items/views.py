@@ -1,12 +1,29 @@
-from rest_framework import viewsets, permissions, status
+from rest_framework import viewsets, permissions, status, filters as drf_filters
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from django.contrib.auth import get_user_model
+from django_filters.rest_framework import DjangoFilterBackend
+from math import radians, sin, cos, asin, sqrt
+
 from .models import Item, ItemImage
 from .serializers import ItemSerializer, ItemImageSerializer
 from .permissions import IsOwnerOrReadOnly
+from .filters import ItemFilter  # ➕ ΝΕΟ
+
 from transactions.models import Transaction
 from transactions.serializers import TransactionSerializer
+
+
+# 🌍 Συνάρτηση υπολογισμού απόστασης (Haversine formula)
+def haversine(lat1, lon1, lat2, lon2):
+    if None in [lat1, lon1, lat2, lon2]:
+        return None
+    R = 6371  # Ακτίνα Γης σε km
+    d_lat = radians(lat2 - lat1)
+    d_lon = radians(lon2 - lon1)
+    a = sin(d_lat / 2) ** 2 + cos(radians(lat1)) * cos(radians(lat2)) * sin(d_lon / 2) ** 2
+    c = 2 * asin(sqrt(a))
+    return R * c
 
 
 class ItemViewSet(viewsets.ModelViewSet):
@@ -14,17 +31,73 @@ class ItemViewSet(viewsets.ModelViewSet):
     serializer_class = ItemSerializer
     permission_classes = [permissions.IsAuthenticatedOrReadOnly, IsOwnerOrReadOnly]
 
+    # ➕ Ενεργοποιούμε search + filters + ordering
+    filter_backends = [DjangoFilterBackend, drf_filters.SearchFilter, drf_filters.OrderingFilter]
+    filterset_class = ItemFilter
+    search_fields = ["title", "description"]
+    ordering_fields = ["created_at", "title"]
+
+    # ✅ Διορθωμένη μέθοδος get_queryset()
+    def get_queryset(self):
+        queryset = super().get_queryset()
+
+        # 🔹 Ανάγνωση query params για απόσταση
+        lat = self.request.query_params.get("lat")
+        lon = self.request.query_params.get("lon")
+        max_distance = self.request.query_params.get("max_distance")
+        print("📍 FILTER PARAMS:", lat, lon, max_distance)  # <--- DEBUG
+
+        category = self.request.query_params.get('category')
+        if category:
+            queryset = queryset.filter(category=category)
+
+        # Αν δεν δόθηκαν, επιστρέφουμε κανονικά
+        if not (lat and lon and max_distance):
+            return queryset
+
+        try:
+            lat = float(lat)
+            lon = float(lon)
+            max_distance = float(max_distance)
+        except ValueError:
+            print("⚠️ Invalid lat/lon/max_distance values")
+            return queryset
+
+        # 🔹 Φιλτράρισμα αντικειμένων βάσει απόστασης (επιστρέφουμε QuerySet)
+        filtered_ids = []
+        for item in queryset:
+            owner = item.owner
+            if owner.latitude is not None and owner.longitude is not None:
+                distance = haversine(lat, lon, owner.latitude, owner.longitude)
+                if distance is not None and distance <= max_distance:
+                    item.distance_km = round(distance, 2)
+                    filtered_ids.append(item.id)
+
+        print(f"✅ Found {len(filtered_ids)} items within {max_distance} km")
+
+        # ✅ Επιστρέφουμε QuerySet (όχι list)
+        filtered_qs = queryset.filter(id__in=filtered_ids)
+
+        # Προσθέτουμε προσωρινό distance για serializer
+        for item in filtered_qs:
+            owner = item.owner
+            item.distance_km = round(haversine(lat, lon, owner.latitude, owner.longitude), 2)
+
+        return filtered_qs
+
     def perform_create(self, serializer):
         serializer.save(owner=self.request.user)
 
-    # Ανέβασμα επιπλέον εικόνας
+    # 📸 Ανέβασμα επιπλέον εικόνας
     @action(detail=True, methods=['post'], permission_classes=[permissions.IsAuthenticated])
     def upload_image(self, request, pk=None):
         item = self.get_object()
 
         if item.owner != request.user:
-            return Response({'detail': 'Δεν είσαι ο ιδιοκτήτης αυτού του αντικειμένου.'},
-                            status=status.HTTP_403_FORBIDDEN)
+            return Response(
+                {'detail': 'Δεν είσαι ο ιδιοκτήτης αυτού του αντικειμένου.'},
+                status=status.HTTP_403_FORBIDDEN
+            )
 
         image = request.FILES.get('image')
         if not image:
@@ -43,23 +116,21 @@ class ItemViewSet(viewsets.ModelViewSet):
         serializer = TransactionSerializer(transactions, many=True)
         return Response(serializer.data)
 
-    # Λίστα με τα αντικείμενα του συνδεδεμένου χρήστη
+    # 📦 Αντικείμενα συνδεδεμένου χρήστη
     @action(detail=False, methods=['get'], permission_classes=[permissions.IsAuthenticated])
     def my_items(self, request):
-        """Επιστρέφει όλα τα διαθέσιμα αντικείμενα του συνδεδεμένου χρήστη"""
         items = Item.objects.filter(owner=request.user, available=True)
         serializer = self.get_serializer(items, many=True)
         return Response(serializer.data)
 
-    # Λίστα με αντικείμενα συγκεκριμένου χρήστη (με username)
+    # 👤 Αντικείμενα συγκεκριμένου χρήστη (χωρίς authentication)
     @action(
         detail=False,
         methods=['get'],
         url_path=r'of_user/(?P<username>[\w.@+-]+)',
-        permission_classes=[permissions.AllowAny    ],
+        permission_classes=[permissions.AllowAny],
     )
     def of_user(self, request, username=None):
-        """Επιστρέφει όλα τα διαθέσιμα αντικείμενα του χρήστη με username=<username>"""
         User = get_user_model()
         try:
             target_user = User.objects.get(username=username)
@@ -71,7 +142,7 @@ class ItemViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(items, many=True)
         return Response(serializer.data)
 
-    # Δημιουργία νέας συναλλαγής (ανταλλαγή ή δανεισμός)
+    # 🧾 Δημιουργία συναλλαγής (ανταλλαγή / δανεισμός)
     @action(detail=True, methods=['post'], permission_classes=[permissions.IsAuthenticated])
     def create_transaction(self, request, pk=None):
         item = self.get_object()
@@ -93,6 +164,7 @@ class ItemViewSet(viewsets.ModelViewSet):
 
         requested_item_id = request.data.get('requested_item')
         requested_item = None
+
         if transaction_type == 'exchange':
             if not requested_item_id:
                 return Response({'detail': 'Πρέπει να επιλέξεις αντικείμενο για ανταλλαγή.'},
@@ -126,10 +198,11 @@ class ItemViewSet(viewsets.ModelViewSet):
         serializer = TransactionSerializer(transaction)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
-    #  Αλλαγή διαθεσιμότητας
+    # 🔄 Αλλαγή διαθεσιμότητας
     @action(detail=True, methods=['post'], permission_classes=[permissions.IsAuthenticated])
     def set_availability(self, request, pk=None):
         item = self.get_object()
+
         if item.owner != request.user:
             return Response({'detail': 'Δεν έχεις δικαίωμα να τροποποιήσεις αυτό το αντικείμενο.'},
                             status=status.HTTP_403_FORBIDDEN)

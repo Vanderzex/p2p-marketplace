@@ -238,7 +238,19 @@ export default function ItemDetails() {
           <strong>Κατάσταση:</strong> {item.available ? "✅ Διαθέσιμο" : "❌ Μη διαθέσιμο"}
         </p>
         <p>
-          <strong>Ιδιοκτήτης:</strong> {item.owner || "Άγνωστος"}
+          <strong>Ιδιοκτήτης:</strong> {item.owner_username || "Άγνωστος"}
+        </p>
+
+        {/* 🆕 Τρόπος Παράδοσης */}
+        <p>
+          <strong>🚚 Τρόπος Παράδοσης:</strong>{" "}
+          {item.delivery_method === "in_person"
+            ? "Χέρι με χέρι"
+            : item.delivery_method === "shipping"
+            ? "Αποστολή με courier"
+            : item.delivery_method === "pickup_point"
+            ? "Σημείο συνάντησης"
+            : "Άλλο"}
         </p>
 
         {isOwner && (
@@ -253,7 +265,7 @@ export default function ItemDetails() {
         )}
       </div>
 
-      {/* Φόρμα συναλλαγής */}
+      {/* Φόρμα συναλλαγής (παραμένει ίδια) */}
       {!isOwner && item.available && (
         <div style={styles.transactionSection}>
           {showTransactionForm ? (

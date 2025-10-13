@@ -13,9 +13,8 @@ import { useAuth } from "./context/AuthContext";
 import ProfilePage from "./ProfilePage";
 import MyItemsPage from "./MyItemsPage";
 import MyTransactionsPage from "./MyTransactionsPage";
-
-// Ειδοποιήσεις
 import NotificationsBell from "./NotificationsBell";
+import NotificationsPage from "./NotificationsPage";
 
 export default function App() {
   const [items, setItems] = useState([]);
@@ -26,21 +25,22 @@ export default function App() {
   const { user, logout, isAuthenticated } = useAuth();
 
   useEffect(() => {
-    const fetchItems = async () => {
-      try {
-        const res = await fetch("http://localhost:8000/api/items/");
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const data = await res.json();
-        setItems(data);
-      } catch (err) {
-        console.error("Σφάλμα φόρτωσης:", err);
-        setError("Αποτυχία σύνδεσης με το backend 😢");
-      } finally {
-        setLoading(false);
-      }
-    };
     fetchItems();
   }, []);
+
+  const fetchItems = async () => {
+    try {
+      const res = await fetch("http://localhost:8000/api/items/");
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      setItems(Array.isArray(data) ? data : data.results || []);
+    } catch (err) {
+      console.error("Σφάλμα φόρτωσης:", err);
+      setError("Αποτυχία σύνδεσης με το backend 😢");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleAddItem = (newItem) => {
     setItems((prev) => [...prev, newItem]);
@@ -50,7 +50,6 @@ export default function App() {
 
   return (
     <>
-      {/* Navbar */}
       <div style={styles.navbar}>
         <Link to="/" style={styles.logo}>
           🛒 P2P Marketplace
@@ -65,10 +64,7 @@ export default function App() {
               <Link to="/my-transactions" style={styles.link}>
                 🔁 Συναλλαγές
               </Link>
-
-              {/* Bell εμφανίζεται μόνο όταν είσαι συνδεδεμένος */}
               <NotificationsBell />
-
               <Link to={`/profile/${user?.id}`} style={styles.link}>
                 👤 {user?.username}
               </Link>
@@ -91,14 +87,13 @@ export default function App() {
 
       <Toaster position="top-center" />
 
-      {/* Routes */}
       <Routes>
-        {/* Αρχική σελίδα */}
         <Route
           path="/"
           element={
             <HomePage
               items={items}
+              setItems={setItems}
               loading={loading}
               error={error}
               onAddItem={handleAddItem}
@@ -106,15 +101,9 @@ export default function App() {
             />
           }
         />
-
-        {/* Προβολή αντικειμένου */}
         <Route path="/items/:id" element={<ItemDetails />} />
-
-        {/* Login / Register */}
         <Route path="/login" element={<LoginPage />} />
         <Route path="/register" element={<RegisterPage />} />
-
-        {/* Προσθήκη αντικειμένου */}
         <Route
           path="/add"
           element={
@@ -123,8 +112,6 @@ export default function App() {
             </ProtectedRoute>
           }
         />
-
-        {/* Προφίλ */}
         <Route
           path="/profile/:id"
           element={
@@ -133,8 +120,6 @@ export default function App() {
             </ProtectedRoute>
           }
         />
-
-        {/* Τα αντικείμενά μου */}
         <Route
           path="/my-items"
           element={
@@ -143,14 +128,15 @@ export default function App() {
             </ProtectedRoute>
           }
         />
-
-        {/* Αντικείμενα άλλου χρήστη */}
         <Route
-          path="/user-items/:username"
-          element={<MyItemsPage />}
+          path="/notifications"
+          element={
+            <ProtectedRoute>
+              <NotificationsPage />
+            </ProtectedRoute>
+          }
         />
-
-        {/* Οι συναλλαγές μου */}
+        <Route path="/user-items/:username" element={<MyItemsPage />} />
         <Route
           path="/my-transactions"
           element={
@@ -164,52 +150,219 @@ export default function App() {
   );
 }
 
-/** Κεντρική σελίδα */
-function HomePage({ items, loading, error, onAddItem, successMessage }) {
+/** 🏠 Κεντρική σελίδα με αναζήτηση & φίλτρα */
+function HomePage({ items, setItems, loading, error, onAddItem, successMessage }) {
+  const [query, setQuery] = useState("");
+  const [transactionType, setTransactionType] = useState("");
+  const [category, setCategory] = useState(""); // 🆕 νέο φίλτρο κατηγορίας
+  const [onlyAvailable, setOnlyAvailable] = useState(false);
+  const [maxDistance, setMaxDistance] = useState("");
+  const [userCoords, setUserCoords] = useState(null);
+  const [isSearching, setIsSearching] = useState(false);
+
+  const { token } = useAuth();
+
+  // ✅ Αυτόματο fetch τοποθεσίας από backend (/api/me/)
+  useEffect(() => {
+    const fetchUserLocation = async () => {
+      if (!token) return;
+      try {
+        const res = await fetch("http://localhost:8000/api/me/", {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const data = await res.json();
+        if (data.latitude && data.longitude) {
+          setUserCoords({ lat: data.latitude, lon: data.longitude });
+          console.log("✅ Φορτώθηκε τοποθεσία από backend:", data.latitude, data.longitude);
+        }
+      } catch (err) {
+        console.error("Σφάλμα φόρτωσης τοποθεσίας χρήστη:", err);
+      }
+    };
+
+    fetchUserLocation();
+  }, [token]);
+
+  // 📍 Εναλλακτική: χρήση geolocation
+  const getUserLocation = () => {
+    if (!navigator.geolocation) {
+      toast.error("Ο browser σου δεν υποστηρίζει geolocation.");
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const coords = {
+          lat: pos.coords.latitude,
+          lon: pos.coords.longitude,
+        };
+        setUserCoords(coords);
+        toast.success("📍 Τοποθεσία αποθηκεύτηκε!");
+      },
+      () => toast.error("Αποτυχία λήψης τοποθεσίας 😢")
+    );
+  };
+
+  // 🔍 Αναζήτηση με φίλτρα
+  const fetchFilteredItems = async () => {
+    setIsSearching(true);
+    console.log("🌍 Sending filters:", {
+      userCoords,
+      maxDistance,
+      query,
+      transactionType,
+      category,
+      onlyAvailable,
+    });
+
+    try {
+      const params = new URLSearchParams();
+      if (query) params.append("search", query);
+      if (transactionType) params.append("transaction_type", transactionType);
+      if (category) params.append("category", category); // 🆕 προσθήκη στο URL
+      if (onlyAvailable) params.append("available", "true");
+      if (userCoords && maxDistance) {
+        params.append("lat", userCoords.lat);
+        params.append("lon", userCoords.lon);
+        params.append("max_distance", maxDistance);
+      }
+
+      const url = `http://localhost:8000/api/items/?${params.toString()}`;
+      console.log("🔗 URL που στέλνεται:", url);
+
+      const res = await fetch(url);
+      const data = await res.json();
+      setItems(Array.isArray(data) ? data : data.results || []);
+    } catch (err) {
+      console.error("Σφάλμα φίλτρων:", err);
+    } finally {
+      setIsSearching(false);
+    }
+  };
+
   return (
     <div style={styles.container}>
       {successMessage && <div style={styles.banner}>{successMessage}</div>}
 
       <h1 style={styles.title}>📦 P2P Marketplace</h1>
-      <p style={styles.subtitle}>Κάνε click σε ένα αντικείμενο για λεπτομέρειες</p>
+      <p style={styles.subtitle}>Αναζήτησε, φίλτραρε και εξερεύνησε αντικείμενα κοντά σου</p>
+
+      <div style={styles.filters}>
+        <input
+          type="text"
+          placeholder="Αναζήτηση..."
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          style={styles.searchInput}
+        />
+
+        <select
+          value={transactionType}
+          onChange={(e) => setTransactionType(e.target.value)}
+          style={styles.select}
+        >
+          <option value="">Όλοι οι τύποι</option>
+          <option value="exchange">Ανταλλαγή</option>
+          <option value="loan">Δανεισμός</option>
+        </select>
+
+        {/* 🆕 Dropdown κατηγορίας */}
+        <select
+          value={category}
+          onChange={(e) => setCategory(e.target.value)}
+          style={styles.select}
+        >
+          <option value="">Όλες οι κατηγορίες</option>
+          <option value="electronics">Ηλεκτρονικά</option>
+          <option value="books">Βιβλία</option>
+          <option value="clothing">Ρούχα</option>
+          <option value="furniture">Έπιπλα</option>
+          <option value="sports">Αθλητικά</option>
+          <option value="tools">Εργαλεία</option>
+          <option value="other">Άλλο</option>
+        </select>
+
+        <label>
+          <input
+            type="checkbox"
+            checked={onlyAvailable}
+            onChange={(e) => setOnlyAvailable(e.target.checked)}
+            style={{ marginRight: "6px" }}
+          />
+          Μόνο διαθέσιμα
+        </label>
+
+        <button onClick={getUserLocation} style={{ ...styles.button, marginLeft: "10px" }}>
+          📍 Χρήση τοποθεσίας
+        </button>
+
+        <input
+          type="number"
+          placeholder="Απόσταση (km)"
+          value={maxDistance}
+          onChange={(e) => setMaxDistance(e.target.value)}
+          style={{ ...styles.searchInput, width: "140px" }}
+        />
+
+        <button
+          onClick={fetchFilteredItems}
+          style={{ ...styles.button, background: "#0078d4", color: "white" }}
+        >
+          🔎 Αναζήτηση
+        </button>
+      </div>
 
       <AddItemForm onAddItem={onAddItem} />
 
-      {loading && <p>Φόρτωση...</p>}
-      {error && <div style={styles.error}>{error}</div>}
-
-      {!loading && !error && (
+      {loading || isSearching ? (
+        <p>Φόρτωση...</p>
+      ) : error ? (
+        <div style={styles.error}>{error}</div>
+      ) : !Array.isArray(items) || items.length === 0 ? (
+        <p>Δεν βρέθηκαν αντικείμενα.</p>
+      ) : (
         <div style={styles.list}>
-          {items.length === 0 ? (
-            <p>Δεν υπάρχουν αντικείμενα ακόμα.</p>
-          ) : (
-            items.map((item) => (
-              <Link
-                key={item.id}
-                to={`/items/${item.id}`}
-                style={{
-                  ...styles.card,
-                  textDecoration: "none",
-                  color: "inherit",
-                }}
-              >
-                <h3>{item.title}</h3>
-                <p>{item.description}</p>
-                <small>
-                  {item.transaction_type === "exchange"
-                    ? "🔁 Ανταλλαγή"
-                    : "🤝 Δανεισμός"}
-                </small>
-              </Link>
-            ))
-          )}
+          {items.map((item) => (
+            <Link
+              key={item.id}
+              to={`/items/${item.id}`}
+              style={{
+                ...styles.card,
+                textDecoration: "none",
+                color: "inherit",
+              }}
+            >
+              <h3>{item.title}</h3>
+              <p>{item.description}</p>
+              <small>
+                {item.transaction_type === "exchange"
+                  ? "🔁 Ανταλλαγή"
+                  : "🤝 Δανεισμός"}
+                {!item.available && (
+                  <span style={{ color: "red", marginLeft: "4px" }}>
+                    (Μη διαθέσιμο)
+                  </span>
+                )}
+              </small>
+
+              {/* 🆕 Εμφάνιση κατηγορίας */}
+              <p style={{ marginTop: "4px", color: "#666" }}>
+                🏷️ Κατηγορία: <strong>{item.category}</strong>
+              </p>
+
+              {item.distance_km && (
+                <p style={{ marginTop: "6px", color: "#007bff" }}>
+                  📍 Απόσταση: <strong>{item.distance_km} km</strong>
+                </p>
+              )}
+            </Link>
+          ))}
         </div>
       )}
     </div>
   );
 }
 
-// Styling
+// 🎨 Styling
 const styles = {
   navbar: {
     background: "#0078d4",
@@ -220,23 +373,9 @@ const styles = {
     alignItems: "center",
     flexWrap: "wrap",
   },
-  logo: {
-    textDecoration: "none",
-    color: "white",
-    fontWeight: "bold",
-    fontSize: "18px",
-  },
-  navLinks: {
-    display: "flex",
-    alignItems: "center",
-    gap: "15px",
-    flexWrap: "wrap",
-  },
-  link: {
-    textDecoration: "none",
-    color: "white",
-    fontWeight: "bold",
-  },
+  logo: { textDecoration: "none", color: "white", fontWeight: "bold", fontSize: "18px" },
+  navLinks: { display: "flex", alignItems: "center", gap: "15px", flexWrap: "wrap" },
+  link: { textDecoration: "none", color: "white", fontWeight: "bold" },
   logoutBtn: {
     background: "white",
     color: "#0078d4",
@@ -245,11 +384,7 @@ const styles = {
     padding: "6px 10px",
     cursor: "pointer",
   },
-  container: {
-    fontFamily: "Arial, sans-serif",
-    textAlign: "center",
-    marginTop: "40px",
-  },
+  container: { fontFamily: "Arial, sans-serif", textAlign: "center", marginTop: "40px", padding: "20px" },
   banner: {
     position: "fixed",
     top: 0,
@@ -264,13 +399,22 @@ const styles = {
   },
   title: { fontSize: "2rem", color: "#0078d4" },
   subtitle: { color: "#555", marginBottom: "20px" },
-  list: {
+  filters: {
     display: "flex",
-    flexWrap: "wrap",
     justifyContent: "center",
-    gap: "20px",
-    marginTop: "30px",
+    alignItems: "center",
+    gap: "10px",
+    flexWrap: "wrap",
+    marginBottom: "20px",
   },
+  searchInput: {
+    padding: "6px 10px",
+    borderRadius: "6px",
+    border: "1px solid #ccc",
+    width: "220px",
+  },
+  select: { padding: "6px 10px", borderRadius: "6px", border: "1px solid #ccc" },
+  list: { display: "flex", flexWrap: "wrap", justifyContent: "center", gap: "20px", marginTop: "30px" },
   card: {
     background: "#f7f7f7",
     borderRadius: "10px",
@@ -279,7 +423,7 @@ const styles = {
     width: "250px",
     textAlign: "left",
     cursor: "pointer",
-    transition: "transform 0.15s ease-in-out",
   },
+  button: { padding: "6px 10px", borderRadius: "6px", border: "none", cursor: "pointer", fontWeight: "bold" },
   error: { color: "red", fontWeight: "bold" },
 };

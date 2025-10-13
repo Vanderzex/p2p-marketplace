@@ -7,6 +7,7 @@ from transactions.models import Transaction, Review
 User = get_user_model()
 
 
+# 🔹 Βασικός serializer χρήστη
 class UserSerializer(serializers.ModelSerializer):
     average_rating = serializers.SerializerMethodField()
     total_completed_transactions = serializers.SerializerMethodField()
@@ -14,28 +15,33 @@ class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
         fields = [
-            'id',
-            'username',
-            'email',
-            'first_name',
-            'last_name',
-            'average_rating',
-            'total_completed_transactions',
+            "id",
+            "username",
+            "email",
+            "first_name",
+            "last_name",
+            # ➕ Νέα πεδία για geolocation:
+            "latitude",
+            "longitude",
+            "location_name",
+            # ➕ Στατιστικά
+            "average_rating",
+            "total_completed_transactions",
         ]
 
     # Μέση αξιολόγηση
     def get_average_rating(self, obj):
-        avg = obj.received_reviews.aggregate(Avg('rating'))['rating__avg']
+        avg = obj.received_reviews.aggregate(Avg("rating"))["rating__avg"]
         return round(avg or 0, 2)
 
     # Πλήθος ολοκληρωμένων συναλλαγών
     def get_total_completed_transactions(self, obj):
         return Transaction.objects.filter(
             Q(requester=obj) | Q(owner=obj),
-            status='completed'
+            status="completed",
         ).count()
 
-    # Προσθήκη reviews στο τελικό output χωρίς circular import
+    # Επιστροφή λίστας αξιολογήσεων χωρίς circular import
     def to_representation(self, instance):
         from transactions.serializers import ReviewSerializer  # lazy import
         representation = super().to_representation(instance)
@@ -49,32 +55,33 @@ class UserSerializer(serializers.ModelSerializer):
         return representation
 
 
-# Εγγραφή νέου χρήστη (Register)
+# 🔹 Εγγραφή νέου χρήστη
 class RegisterSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True)
 
     class Meta:
         model = User
-        fields = ['username', 'email', 'password']
+        fields = ["username", "email", "password"]
 
     def create(self, validated_data):
         user = User.objects.create_user(
-            username=validated_data['username'],
-            email=validated_data.get('email'),
-            password=validated_data['password']
+            username=validated_data["username"],
+            email=validated_data.get("email", ""),
+            password=validated_data["password"],
         )
         return user
 
 
+# 🔹 Εγγραφή + αυτόματη έκδοση token (προαιρετικό)
 class RegisterWithTokenSerializer(RegisterSerializer):
     token = serializers.SerializerMethodField()
 
     class Meta(RegisterSerializer.Meta):
-        fields = RegisterSerializer.Meta.fields + ['token']
+        fields = RegisterSerializer.Meta.fields + ["token"]
 
     def get_token(self, obj):
         refresh = RefreshToken.for_user(obj)
         return {
-            'refresh': str(refresh),
-            'access': str(refresh.access_token),
+            "refresh": str(refresh),
+            "access": str(refresh.access_token),
         }

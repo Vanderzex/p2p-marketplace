@@ -1,8 +1,8 @@
 from django.db import models
 from django.conf import settings
 from django.core.exceptions import ValidationError
-from django.utils import timezone
 from items.models import Item
+from math import radians, sin, cos, sqrt, atan2
 
 
 class Transaction(models.Model):
@@ -26,6 +26,7 @@ class Transaction(models.Model):
         ('loan', 'Δανεισμός'),
         ('either', 'Ανταλλαγή ή Δανεισμός'),
     ]
+
 
     # Ο χρήστης που ζητά τη συναλλαγή
     requester = models.ForeignKey(
@@ -68,6 +69,7 @@ class Transaction(models.Model):
         verbose_name="Τύπος συναλλαγής"
     )
 
+
     # Προαιρετικό μήνυμα από τον αιτούντα
     message = models.TextField(blank=True, verbose_name="Μήνυμα")
 
@@ -80,46 +82,21 @@ class Transaction(models.Model):
     )
 
     # Περίοδος δανεισμού (ισχύει μόνο για loan)
-    start_date = models.DateField(
-        null=True,
-        blank=True,
-        verbose_name="Έναρξη δανεισμού"
-    )
-    end_date = models.DateField(
-        null=True,
-        blank=True,
-        verbose_name="Λήξη δανεισμού"
-    )
+    start_date = models.DateField(null=True, blank=True, verbose_name="Έναρξη δανεισμού")
+    end_date = models.DateField(null=True, blank=True, verbose_name="Λήξη δανεισμού")
 
     # Ημερομηνία δημιουργίας
-    created_at = models.DateTimeField(
-        auto_now_add=True,
-        verbose_name="Ημερομηνία δημιουργίας"
-    )
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Ημερομηνία δημιουργίας")
 
     # Ημερομηνία επιστροφής (μόνο όταν ο ιδιοκτήτης μαρκάρει “Επιστράφηκε”)
-    returned_at = models.DateTimeField(
-        null=True,
-        blank=True,
-        verbose_name="Ημερομηνία επιστροφής"
-    )
+    returned_at = models.DateTimeField(null=True, blank=True, verbose_name="Ημερομηνία επιστροφής")
 
     # Όροι δανεισμού (ισχύουν μόνο για loan)
-    terms = models.TextField(
-        blank=True,
-        null=True,
-        verbose_name="Όροι Δανεισμού"
-    )
-
-    borrower_accepted_terms = models.BooleanField(
-        default=False,
-        verbose_name="Αποδοχή Όρων από Αιτούντα"
-    )
+    terms = models.TextField(blank=True, null=True, verbose_name="Όροι Δανεισμού")
+    borrower_accepted_terms = models.BooleanField(default=False, verbose_name="Αποδοχή Όρων από Αιτούντα")
 
     def clean(self):
-        """
-        Έλεγχοι εγκυρότητας ανάλογα με το είδος συναλλαγής
-        """
+        """Έλεγχοι εγκυρότητας ανάλογα με το είδος συναλλαγής"""
         # ----- ΔΑΝΕΙΣΜΟΣ -----
         if self.transaction_type == 'loan':
             if not self.start_date or not self.end_date:
@@ -127,7 +104,7 @@ class Transaction(models.Model):
             if self.start_date > self.end_date:
                 raise ValidationError("Η ημερομηνία λήξης πρέπει να είναι μετά την έναρξη.")
             if self.status == 'accepted' and not self.borrower_accepted_terms:
-                raise ValidationError("Ο αιτών πρέπει να αποδεχθεί τους όρους δανεισμού πριν εγκριθεί η συναλλαγή.")
+                raise ValidationError("Ο αιτών πρέπει να αποδεχθεί τους όρους πριν εγκριθεί η συναλλαγή.")
 
         # ----- ΑΝΤΑΛΛΑΓΗ -----
         elif self.transaction_type == 'exchange':
@@ -138,10 +115,6 @@ class Transaction(models.Model):
             self.terms = None
             self.borrower_accepted_terms = False
 
-        # ----- ΕΙΤΕ -----
-        elif self.transaction_type == 'either':
-            pass
-
     def __str__(self):
         return f"{self.requester} → {self.owner} ({self.get_transaction_type_display()})"
 
@@ -150,10 +123,32 @@ class Transaction(models.Model):
         verbose_name_plural = "Συναλλαγές"
         ordering = ['-created_at']
 
+    # ✅ Υπολογισμός απόστασης (με ασφάλεια)
+    @property
+    def distance_km(self):
+        """Υπολογίζει την απόσταση (km) μεταξύ owner και requester, αν έχουν τοποθεσία."""
+        user1 = self.owner
+        user2 = self.requester
+
+        if not (user1 and user2):
+            return None
+
+        try:
+            lat1, lon1 = float(user1.latitude), float(user1.longitude)
+            lat2, lon2 = float(user2.latitude), float(user2.longitude)
+        except (TypeError, ValueError):
+            return None
+
+        R = 6371.0  # ακτίνα γης (km)
+        dlat = radians(lat2 - lat1)
+        dlon = radians(lon2 - lon1)
+        a = sin(dlat / 2)**2 + cos(radians(lat1)) * cos(radians(lat2)) * sin(dlon / 2)**2
+        c = 2 * atan2(sqrt(a), sqrt(1 - a))
+        return round(R * c, 2)
+
+
 class Review(models.Model):
-    """
-    Αξιολόγηση χρήστη μετά από ολοκληρωμένη συναλλαγή.
-    """
+    """Αξιολόγηση χρήστη μετά από ολοκληρωμένη συναλλαγή."""
     transaction = models.ForeignKey(
         Transaction,
         on_delete=models.CASCADE,
@@ -175,7 +170,6 @@ class Review(models.Model):
 
     rating = models.PositiveSmallIntegerField(default=5, verbose_name="Αστέρια (1-5)")
     comment = models.TextField(blank=True, null=True, verbose_name="Σχόλιο")
-
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Ημερομηνία Δημιουργίας")
 
     class Meta:

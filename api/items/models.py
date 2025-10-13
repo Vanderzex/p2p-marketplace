@@ -4,6 +4,7 @@ from django.utils.timezone import now
 
 User = get_user_model()
 
+
 class Item(models.Model):
     TRANSACTION_CHOICES = [
         ('exchange', 'Ανταλλαγή'),
@@ -11,14 +12,42 @@ class Item(models.Model):
         ('either', 'Ανταλλαγή ή Δανεισμός'),
     ]
 
+    # 🏷️ Κατηγορίες αντικειμένων
+    CATEGORY_CHOICES = [
+        ('electronics', 'Ηλεκτρονικά'),
+        ('books', 'Βιβλία'),
+        ('clothing', 'Ρούχα'),
+        ('furniture', 'Έπιπλα'),
+        ('sports', 'Αθλητικά'),
+        ('tools', 'Εργαλεία'),
+        ('other', 'Άλλο'),
+    ]
+
+    DELIVERY_CHOICES = [
+        ('in_person', 'Χέρι με χέρι'),
+        ('shipping', 'Αποστολή με courier'),
+        ('pickup_point', 'Σημείο συνάντησης'),
+        ('other', 'Άλλο'),
+    ]
+
     title = models.CharField(max_length=100)
     description = models.TextField(blank=True)
+
     transaction_type = models.CharField(
         max_length=10,
         choices=TRANSACTION_CHOICES,
         default='exchange',
         verbose_name="Τύπος συναλλαγής"
     )
+
+    # 🔹 ΝΕΟ ΠΕΔΙΟ: Κατηγορία αντικειμένου
+    category = models.CharField(
+        max_length=30,
+        choices=CATEGORY_CHOICES,
+        default='other',
+        verbose_name="Κατηγορία"
+    )
+
     available = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     main_image = models.ImageField(upload_to='item_images/', blank=True, null=True)
@@ -31,13 +60,21 @@ class Item(models.Model):
     )
 
     terms = models.TextField(
-    blank=True,
-    null=True,
-    verbose_name="Προεπιλεγμένοι Όροι Διάθεσης"
-)
+        blank=True,
+        null=True,
+        verbose_name="Προεπιλεγμένοι Όροι Διάθεσης"
+    )
+
+    delivery_method = models.CharField(
+        max_length=20,
+        choices=DELIVERY_CHOICES,
+        default='in_person',
+        verbose_name="Τρόπος Παράδοσης"
+    )
 
     def __str__(self):
-        return f"{self.title} ({self.get_transaction_type_display()})"
+        # Εμφανίζει και την κατηγορία για πιο καθαρή περιγραφή
+        return f"{self.title} ({self.get_category_display()} - {self.get_transaction_type_display()})"
 
     class Meta:
         ordering = ['-created_at']

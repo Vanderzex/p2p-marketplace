@@ -10,7 +10,7 @@ export default function NotificationsBell() {
   const [open, setOpen] = useState(false);
   const navigate = useNavigate();
 
-  // 📡 Ανάκτηση ειδοποιήσεων (count + λίστα)
+  // 📡 Ανάκτηση ειδοποιήσεων (πλήθος + λίστα)
   const fetchNotifications = async () => {
     if (!token) return;
     try {
@@ -21,13 +21,28 @@ export default function NotificationsBell() {
       const countData = await resCount.json();
       setUnreadCount(countData.unread_count || 0);
 
-      // 📜 Αν το dropdown είναι ανοιχτό → φέρε λίστα ειδοποιήσεων
+      // 📜 Αν είναι ανοιχτό το dropdown, φέρε και τη λίστα
       if (open) {
         const resList = await fetch("http://localhost:8000/api/notifications/", {
           headers: { Authorization: `Bearer ${token}` },
         });
+        if (!resList.ok) throw new Error("Σφάλμα φόρτωσης ειδοποιήσεων");
         const listData = await resList.json();
-        setNotifications(listData.slice(0, 10)); // μόνο 10 πιο πρόσφατες
+
+        // ✅ Προσαρμογή σε όλες τις περιπτώσεις (pagination ή όχι)
+        const list = Array.isArray(listData)
+          ? listData
+          : listData.results
+          ? listData.results
+          : [];
+
+        // 🔹 Ταξινόμηση (πιο πρόσφατες πρώτες)
+        const sorted = [...list].sort(
+          (a, b) => new Date(b.created_at) - new Date(a.created_at)
+        );
+
+        // 🔹 Εμφάνιση μόνο των 5 πιο πρόσφατων
+        setNotifications(sorted.slice(0, 5));
       }
     } catch (err) {
       console.error("⚠️ Σφάλμα ειδοποιήσεων:", err);
@@ -36,11 +51,11 @@ export default function NotificationsBell() {
 
   useEffect(() => {
     fetchNotifications();
-    const interval = setInterval(fetchNotifications, 5000); // 🔁 κάθε 5s
+    const interval = setInterval(fetchNotifications, 5000);
     return () => clearInterval(interval);
   }, [token, open]);
 
-  // 📩 Μαρκάρισμα όλων ως διαβασμένων
+  // ✅ Μαρκάρισμα όλων ως διαβασμένων
   const markAllAsRead = async () => {
     try {
       await fetch("http://localhost:8000/api/notifications/mark_all_read/", {
@@ -48,49 +63,42 @@ export default function NotificationsBell() {
         headers: { Authorization: `Bearer ${token}` },
       });
       setUnreadCount(0);
+      fetchNotifications();
     } catch {
       toast.error("⚠️ Σφάλμα ενημέρωσης ειδοποιήσεων");
     }
   };
 
-  // 🧭 Click σε ειδοποίηση → μετάβαση στη σωστή σελίδα
+  // 📨 Click σε ειδοποίηση
   const handleClick = (n) => {
     setOpen(false);
 
-    // ✅ Μαρκάρουμε την ειδοποίηση ως διαβασμένη
+    // Μαρκάρουμε τη συγκεκριμένη ειδοποίηση ως διαβασμένη
     fetch(`http://localhost:8000/api/notifications/${n.id}/mark_read/`, {
       method: "POST",
       headers: { Authorization: `Bearer ${token}` },
     }).catch(() => {});
 
-    console.log("🔔 Notification clicked:", n);
-
     if (n.transaction) {
-      // ✅ Εξασφαλίζουμε ότι είναι καθαρό ID (όχι object)
       const txId = typeof n.transaction === "object" ? n.transaction.id : n.transaction;
 
       if (n.type === "message" || n.message?.includes("μήνυμα")) {
-        // 💬 Άνοιγμα chat
         navigate(`/my-transactions?chat=${txId}`);
         toast("💬 Άνοιγμα συνομιλίας...");
       } else if (n.type === "transaction" || n.message?.includes("συναλλαγή")) {
-        // 🔁 Ειδοποίηση για νέα συναλλαγή
         navigate(`/my-transactions?transaction=${txId}`);
         toast.success("📩 Νέο αίτημα συναλλαγής!");
       } else {
-        // 🧩 Άλλη ειδοποίηση σχετική με συναλλαγή
         navigate(`/my-transactions?tx=${txId}`);
         toast("📩 Ενημέρωση συναλλαγής!");
       }
     } else {
-      // 🔹 Γενική ειδοποίηση χωρίς συναλλαγή
       toast(n.message || "📨 Νέα ειδοποίηση");
     }
   };
 
   return (
     <div style={styles.wrapper}>
-      {/* 🔔 Εικονίδιο ειδοποιήσεων */}
       <button
         style={styles.bellButton}
         onClick={() => {
@@ -103,7 +111,6 @@ export default function NotificationsBell() {
         {unreadCount > 0 && <span style={styles.badge}>{unreadCount}</span>}
       </button>
 
-      {/* 📜 Drop-down με ειδοποιήσεις */}
       {open && (
         <div style={styles.dropdown}>
           <div style={styles.headerRow}>
@@ -125,7 +132,7 @@ export default function NotificationsBell() {
                   backgroundColor: n.is_read ? "#fff" : "#e6f7ff",
                 }}
               >
-                <p style={{ margin: 0, cursor: "pointer" }}>
+                <p style={{ margin: 0 }}>
                   <strong>{n.sender_username || "Σύστημα"}</strong> — {n.message}
                 </p>
                 <small style={styles.date}>
@@ -139,6 +146,19 @@ export default function NotificationsBell() {
               </div>
             ))
           )}
+
+          {/* 🔹 Κουμπί "Δες όλες" */}
+          <div style={styles.footer}>
+            <button
+              style={styles.viewAllBtn}
+              onClick={() => {
+                setOpen(false);
+                navigate("/notifications");
+              }}
+            >
+              📜 Δες όλες τις ειδοποιήσεις
+            </button>
+          </div>
         </div>
       )}
     </div>
@@ -146,10 +166,7 @@ export default function NotificationsBell() {
 }
 
 const styles = {
-  wrapper: {
-    position: "relative",
-    marginLeft: "10px",
-  },
+  wrapper: { position: "relative", marginLeft: "10px" },
   bellButton: {
     position: "relative",
     fontSize: "1.6rem",
@@ -181,7 +198,10 @@ const styles = {
     padding: "10px",
     zIndex: 1000,
     fontFamily: "Arial, sans-serif",
-    color: "#222", // ✅ Βασικό χρώμα κειμένου
+    color: "#222",
+    display: "flex",
+    flexDirection: "column",
+    maxHeight: "420px",
   },
   headerRow: {
     display: "flex",
@@ -202,18 +222,26 @@ const styles = {
     cursor: "pointer",
     transition: "background 0.2s",
   },
-  notificationHover: {
-    backgroundColor: "#f5f5f5",
-  },
-  date: {
-    color: "#555",
-    fontSize: "0.8rem",
-  },
+  date: { color: "#555", fontSize: "0.8rem" },
   empty: {
     textAlign: "center",
     color: "#777",
     fontStyle: "italic",
     padding: "10px 0",
   },
+  footer: {
+    marginTop: "10px",
+    borderTop: "1px solid #ddd",
+    paddingTop: "8px",
+    textAlign: "center",
+  },
+  viewAllBtn: {
+    background: "#007bff",
+    color: "white",
+    border: "none",
+    borderRadius: "6px",
+    padding: "6px 12px",
+    cursor: "pointer",
+    fontSize: "0.9rem",
+  },
 };
-

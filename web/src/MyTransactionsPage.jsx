@@ -30,6 +30,7 @@ export default function MyTransactionsPage() {
   const [activeTab, setActiveTab] = useState("active");
   const [activeChat, setActiveChat] = useState(null);
   const [pendingChatId, setPendingChatId] = useState(null);
+  const [subTab, setSubTab] = useState("incoming");
 
   // Exchange modal
   const [exchangeModalOpen, setExchangeModalOpen] = useState(false);
@@ -37,6 +38,8 @@ export default function MyTransactionsPage() {
 
   // Loan accept inline inputs (ανά συναλλαγή)
   const [loanDates, setLoanDates] = useState({}); // { [txId]: { start_date, end_date } }
+
+  const [expandedId, setExpandedId] = useState(null);
 
   const [searchParams] = useSearchParams();
 
@@ -48,7 +51,7 @@ export default function MyTransactionsPage() {
       const res = await authFetch("http://localhost:8000/api/transactions/");
       if (!res.ok) throw new Error("Σφάλμα φόρτωσης συναλλαγών");
       const data = await res.json();
-      setTransactions(data);
+      setTransactions(Array.isArray(data) ? data : data.results || []);
       setError(null);
     } catch (err) {
       setError("⚠️ Αποτυχία φόρτωσης συναλλαγών");
@@ -74,14 +77,14 @@ export default function MyTransactionsPage() {
     }
   }, []);
 
-// Μόλις φορτωθούν οι συναλλαγές → άνοιγμα ChatBox
+  // Μόλις φορτωθούν οι συναλλαγές → άνοιγμα ChatBox
   useEffect(() => {
     if (!pendingChatId || transactions.length === 0) return;
 
     const tx = transactions.find((t) => String(t.id) === String(pendingChatId));
     if (tx) {
       const receiverId =
-      tx.owner?.id === user?.id ? tx.requester?.id : tx.owner?.id;
+        tx.owner?.id === user?.id ? tx.requester?.id : tx.owner?.id;
 
       console.log("💬 Άνοιγμα chat για:", tx.id, "receiver:", receiverId);
 
@@ -317,50 +320,77 @@ export default function MyTransactionsPage() {
       {/* Ενεργές */}
       {activeTab === "active" && (
         <>
-          <section style={styles.section}>
-            <h2>📥 Εισερχόμενα αιτήματα</h2>
-            {incoming.length === 0 ? (
-              <p>Δεν υπάρχουν εισερχόμενα αιτήματα.</p>
-            ) : (
-              incoming.map((tx) => (
-                <TransactionCard
-                  key={tx.id}
-                  tx={tx}
-                  user={user}
-                  itemsByUser={itemsByUser}
-                  setActiveChat={setActiveChat}
-                  // actions
-                  onAccept={() => handleAccept(tx)}
-                  onReject={() => handleReject(tx.id)}
-                  onOpenSelect={() => openSelectItemModal(tx)}
-                  onComplete={() => handleComplete(tx.id)}
-                  loanDates={loanDates[tx.id] || {}}
-                  setLoanDates={(dates) =>
-                    setLoanDates((prev) => ({ ...prev, [tx.id]: dates }))
-                  }
-                />
-              ))
-            )}
-          </section>
+          {/* Εσωτερικά tabs */}
+          <div style={styles.subTabContainer}>
+            <button
+              style={
+                subTab === "incoming" ? styles.activeSubTab : styles.subTab
+              }
+              onClick={() => setSubTab("incoming")}
+            >
+              📥 Εισερχόμενα
+            </button>
+            <button
+              style={
+                subTab === "outgoing" ? styles.activeSubTab : styles.subTab
+              }
+              onClick={() => setSubTab("outgoing")}
+            >
+              📤 Εξερχόμενα
+            </button>
+          </div>
 
-          <section style={styles.section}>
-            <h2>📤 Εξερχόμενα αιτήματα</h2>
-            {outgoing.length === 0 ? (
-              <p>Δεν υπάρχουν εξερχόμενα αιτήματα.</p>
-            ) : (
-              outgoing.map((tx) => (
-                <OutgoingCard
-                  key={tx.id}
-                  tx={tx}
-                  user={user}
-                  setActiveChat={setActiveChat}
-                  onConfirmExchange={() => handleConfirmExchange(tx.id)}
-                  onRejectExchange={() => handleRejectExchange(tx.id)}
-                  onReturnLoan={() => handleReturnLoan(tx.id)}
-                />
-              ))
-            )}
-          </section>
+          {/* Εισερχόμενα */}
+          {subTab === "incoming" && (
+            <section style={styles.section}>
+              {incoming.length === 0 ? (
+                <p>Δεν υπάρχουν εισερχόμενα αιτήματα.</p>
+              ) : (
+                incoming.map((tx) => (
+                  <TransactionCard
+                    key={tx.id}
+                    tx={tx}
+                    user={user}
+                    itemsByUser={itemsByUser}
+                    setActiveChat={setActiveChat}
+                    onAccept={() => handleAccept(tx)}
+                    onReject={() => handleReject(tx.id)}
+                    onOpenSelect={() => openSelectItemModal(tx)}
+                    onComplete={() => handleComplete(tx.id)}
+                    loanDates={loanDates[tx.id] || {}}
+                    setLoanDates={(dates) =>
+                      setLoanDates((prev) => ({ ...prev, [tx.id]: dates }))
+                    }
+                    expandedId={expandedId}
+                    setExpandedId={setExpandedId}
+                  />
+                ))
+              )}
+            </section>
+          )}
+
+          {/* Εξερχόμενα */}
+          {subTab === "outgoing" && (
+            <section style={styles.section}>
+              {outgoing.length === 0 ? (
+                <p>Δεν υπάρχουν εξερχόμενα αιτήματα.</p>
+              ) : (
+                outgoing.map((tx) => (
+                  <OutgoingCard
+                    key={tx.id}
+                    tx={tx}
+                    user={user}
+                    setActiveChat={setActiveChat}
+                    onConfirmExchange={() => handleConfirmExchange(tx.id)}
+                    onRejectExchange={() => handleRejectExchange(tx.id)}
+                    onReturnLoan={() => handleReturnLoan(tx.id)}
+                    expandedId={expandedId}
+                    setExpandedId={setExpandedId}
+                  />
+                ))
+              )}
+            </section>
+          )}
         </>
       )}
 
@@ -390,6 +420,19 @@ export default function MyTransactionsPage() {
                   <strong>Από:</strong> {tx.requester?.username} →{" "}
                   <strong>Προς:</strong> {tx.owner?.username}
                 </p>
+                {/* 📍 Απόσταση μεταξύ χρηστών */}
+                {tx.distance_km !== null && tx.distance_km !== undefined ? (
+                  <p style={{ color: "#555", marginTop: "4px" }}>
+                    📍 Απόσταση μεταξύ χρηστών:{" "}
+                    <strong style={{ color: "#007bff" }}>
+                      {tx.distance_km} km
+                    </strong>
+                  </p>
+                ) : (
+                  <p style={{ color: "#999", marginTop: "4px" }}>
+                    📍 Απόσταση: <em>—</em>
+                  </p>
+                )}
                 {tx.end_date && (
                   <p>
                     <strong>Ημ/νία:</strong>{" "}
@@ -527,7 +570,8 @@ export default function MyTransactionsPage() {
             >
               <div style={styles.modalHeader}>
                 <h3 style={{ margin: 0 }}>
-                  🎁 Επιλογή αντικειμένου από {exchangeModalTx.requester?.username}
+                  🎁 Επιλογή αντικειμένου από{" "}
+                  {exchangeModalTx.requester?.username}
                 </h3>
                 <button
                   style={styles.modalClose}
@@ -550,11 +594,14 @@ export default function MyTransactionsPage() {
                     <div style={styles.itemsGrid}>
                       {list.map((it) => (
                         <div key={it.id} style={styles.itemCard}>
-                          <div style={{ display: "flex", justifyContent: "space-between" }}>
+                          <div
+                            style={{
+                              display: "flex",
+                              justifyContent: "space-between",
+                            }}
+                          >
                             <strong>{it.title}</strong>
-                            <span>
-                              {renderType(it.transaction_type)}
-                            </span>
+                            <span>{renderType(it.transaction_type)}</span>
                           </div>
                           <p style={{ marginTop: 6 }}>
                             {it.description?.slice(0, 120) || "—"}
@@ -589,6 +636,7 @@ export default function MyTransactionsPage() {
 function TransactionCard({
   tx,
   user,
+  itemsByUser,
   setActiveChat,
   onAccept,
   onReject,
@@ -596,97 +644,175 @@ function TransactionCard({
   onComplete,
   loanDates,
   setLoanDates,
+  expandedId,
+  setExpandedId,
 }) {
   const isOwner = tx.owner?.username === user?.username;
+  const isExpanded = expandedId === tx.id;
 
   return (
-    <div style={styles.card}>
-      <p>
-        <strong>Από:</strong>{" "}
-        <Link to={`/profile/${tx.requester?.id}`} style={styles.link}>
-          {tx.requester?.username}
-        </Link>
-      </p>
-      <p>
-        <strong>Τύπος:</strong> {renderType(tx.transaction_type)}
-      </p>
-      <p>
-        <strong>Κατάσταση:</strong> {renderStatus(tx.status)}
-      </p>
+    <div
+      style={{
+        ...styles.card,
+        cursor: "pointer",
+        background: isExpanded ? "#eef7ff" : "#f9f9f9",
+      }}
+      onClick={() => setExpandedId(isExpanded ? null : tx.id)}
+    >
+      {/* Compact view */}
+      {!isExpanded && (
+        <div>
+          <p>
+            👤{" "}
+            <Link to={`/profile/${tx.requester?.id}`} style={styles.link}>
+              {tx.requester?.username}
+            </Link>
+          </p>
+          <p>
+            🎁 {tx.item_title} — {renderType(tx.transaction_type)}
+          </p>
+        </div>
+      )}
 
-      {/* Κουμπί Chat */}
-      <button
-        style={styles.chatButton}
-        onClick={() =>
-          setActiveChat({ transactionId: tx.id, receiverId: tx.requester?.id })
-        }
-      >
-        💬 Συνομιλία
-      </button>
+      {/* Expanded view */}
+      {isExpanded && (
+        <div>
+          <p>
+            <strong>Από:</strong>{" "}
+            <Link to={`/profile/${tx.requester?.id}`} style={styles.link}>
+              {tx.requester?.username}
+            </Link>
+          </p>
+          <p>
+            <strong>Αντικείμενο:</strong>{" "}
+            <Link to={`/items/${tx.item}`} style={styles.link}>
+              {tx.item_title}
+            </Link>
+          </p>
+          <p>
+            <strong>Τύπος:</strong> {renderType(tx.transaction_type)}
+          </p>
+          <p>
+            <strong>Κατάσταση:</strong> {renderStatus(tx.status)}
+          </p>
 
-      {/* Δράσεις OWNER */}
-      {isOwner && (
-        <div style={{ marginTop: 10, display: "flex", gap: 8, flexWrap: "wrap" }}>
-          {/* PENDING: Accept / Reject */}
-          {tx.status === "pending" && (
-            <>
-              {tx.transaction_type === "loan" && (
-                <div style={styles.inlineRow}>
-                  <input
-                    type="date"
-                    value={loanDates.start_date || ""}
-                    onChange={(e) =>
-                      setLoanDates({
-                        ...loanDates,
-                        start_date: e.target.value,
-                      })
-                    }
-                    style={styles.dateInput}
-                    placeholder="Έναρξη"
-                  />
-                  <input
-                    type="date"
-                    value={loanDates.end_date || ""}
-                    onChange={(e) =>
-                      setLoanDates({
-                        ...loanDates,
-                        end_date: e.target.value,
-                      })
-                    }
-                    style={styles.dateInput}
-                    placeholder="Λήξη"
-                  />
-                </div>
+          {tx.distance_km !== null && (
+            <p style={{ color: "#555" }}>
+              📍 Απόσταση:{" "}
+              <strong style={{ color: "#007bff" }}>{tx.distance_km} km</strong>
+            </p>
+          )}
+
+          {/* Κουμπί Chat */}
+          <button
+            style={styles.chatButton}
+            onClick={(e) => {
+              e.stopPropagation();
+              setActiveChat({
+                transactionId: tx.id,
+                receiverId: tx.requester?.id,
+              });
+            }}
+          >
+            💬 Συνομιλία
+          </button>
+
+          {/* Δράσεις OWNER */}
+          {isOwner && (
+            <div
+              style={{
+                marginTop: 10,
+                display: "flex",
+                gap: 8,
+                flexWrap: "wrap",
+              }}
+            >
+              {tx.status === "pending" && (
+                <>
+                  {tx.transaction_type === "loan" && (
+                    <div style={styles.inlineRow}>
+                      <input
+                        type="date"
+                        value={loanDates.start_date || ""}
+                        onChange={(e) =>
+                          setLoanDates({
+                            ...loanDates,
+                            start_date: e.target.value,
+                          })
+                        }
+                        style={styles.dateInput}
+                      />
+                      <input
+                        type="date"
+                        value={loanDates.end_date || ""}
+                        onChange={(e) =>
+                          setLoanDates({
+                            ...loanDates,
+                            end_date: e.target.value,
+                          })
+                        }
+                        style={styles.dateInput}
+                      />
+                    </div>
+                  )}
+
+                  <button
+                    style={styles.primaryBtn}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onAccept();
+                    }}
+                  >
+                    ✅ Αποδοχή
+                  </button>
+                  <button
+                    style={styles.dangerBtn}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onReject();
+                    }}
+                  >
+                    ❌ Απόρριψη
+                  </button>
+
+                  {tx.transaction_type === "exchange" && (
+                    <button
+                      style={styles.secondaryBtn}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onOpenSelect();
+                      }}
+                    >
+                      🎁 Επιλογή αντικειμένου
+                    </button>
+                  )}
+                </>
               )}
 
-              <button style={styles.primaryBtn} onClick={onAccept}>
-                ✅ Αποδοχή
-              </button>
-              <button style={styles.dangerBtn} onClick={onReject}>
-                ❌ Απόρριψη
-              </button>
-
-              {/* Exchange: επιλογή αντικειμένου από requester */}
-              {tx.transaction_type === "exchange" && (
-                <button style={styles.secondaryBtn} onClick={onOpenSelect}>
-                  🎁 Επιλογή αντικειμένου
+              {tx.status === "accepted" && (
+                <button
+                  style={styles.primaryBtn}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onComplete();
+                  }}
+                >
+                  🏁 Ολοκλήρωση
                 </button>
               )}
-            </>
-          )}
 
-          {/* ACCEPTED: Owner μπορεί να ολοκληρώσει (σε loan μετά από επιστροφή/ή και απευθείας αν συμφωνήσατε) */}
-          {tx.status === "accepted" && (
-            <button style={styles.primaryBtn} onClick={onComplete}>
-              🏁 Ολοκλήρωση
-            </button>
-          )}
-
-          {/* RETURNED_BY_REQUESTER: Owner ολοκληρώνει (loan flow) */}
-          {tx.status === "returned_by_requester" && (
-            <button style={styles.primaryBtn} onClick={onComplete}>
-              🏁 Επιβεβαίωση & Ολοκλήρωση
-            </button>
+              {tx.status === "returned_by_requester" && (
+                <button
+                  style={styles.primaryBtn}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onComplete();
+                  }}
+                >
+                  🏁 Επιβεβαίωση & Ολοκλήρωση
+                </button>
+              )}
+            </div>
           )}
         </div>
       )}
@@ -701,55 +827,132 @@ function OutgoingCard({
   onConfirmExchange,
   onRejectExchange,
   onReturnLoan,
+  expandedId,
+  setExpandedId,
 }) {
   const isRequester = tx.requester?.username === user?.username;
+  const isExpanded = expandedId === tx.id;
 
   return (
-    <div style={styles.card}>
-      <p>
-        <strong>Προς:</strong>{" "}
-        <Link to={`/profile/${tx.owner?.id}`} style={styles.link}>
-          {tx.owner?.username}
-        </Link>
-      </p>
-      <p>
-        <strong>Τύπος:</strong> {renderType(tx.transaction_type)}
-      </p>
-      <p>
-        <strong>Κατάσταση:</strong> {renderStatus(tx.status)}
-      </p>
+    <div
+      style={{
+        ...styles.card,
+        cursor: "pointer",
+        background: isExpanded ? "#eef7ff" : "#f9f9f9",
+        transition: "0.2s",
+      }}
+      onClick={() => setExpandedId(isExpanded ? null : tx.id)}
+    >
+      {/* Compact view */}
+      {!isExpanded && (
+        <div>
+          <p>
+            👤{" "}
+            <Link to={`/profile/${tx.owner?.id}`} style={styles.link}>
+              {tx.owner?.username}
+            </Link>
+          </p>
+          <p>
+            🎁 {tx.item_title} — {renderType(tx.transaction_type)}
+          </p>
+        </div>
+      )}
 
-      {/* Κουμπί Chat */}
-      <button
-        style={styles.chatButton}
-        onClick={() =>
-          setActiveChat({ transactionId: tx.id, receiverId: tx.owner?.id })
-        }
-      >
-        💬 Συνομιλία
-      </button>
+      {/* Expanded view */}
+      {isExpanded && (
+        <div>
+          <p>
+            <strong>Προς:</strong>{" "}
+            <Link to={`/profile/${tx.owner?.id}`} style={styles.link}>
+              {tx.owner?.username}
+            </Link>
+          </p>
+          <p>
+            <strong>Αντικείμενο:</strong>{" "}
+            <Link to={`/items/${tx.item}`} style={styles.link}>
+              {tx.item_title}
+            </Link>
+          </p>
+          <p>
+            <strong>Τύπος:</strong> {renderType(tx.transaction_type)}
+          </p>
+          <p>
+            <strong>Κατάσταση:</strong> {renderStatus(tx.status)}
+          </p>
 
-      {/* Δράσεις REQUESTER */}
-      {isRequester && (
-        <div style={{ marginTop: 10, display: "flex", gap: 8, flexWrap: "wrap" }}>
-          {/* Ανταλλαγή: Pending confirmation → Confirm / Reject */}
-          {tx.transaction_type === "exchange" &&
-            tx.status === "pending_confirmation" && (
-              <>
-                <button style={styles.primaryBtn} onClick={onConfirmExchange}>
-                  🔁 Επιβεβαίωση ανταλλαγής
+          {tx.distance_km !== null && tx.distance_km !== undefined ? (
+            <p style={{ color: "#555" }}>
+              📍 Απόσταση:{" "}
+              <strong style={{ color: "#007bff" }}>{tx.distance_km} km</strong>
+            </p>
+          ) : (
+            <p style={{ color: "#999" }}>
+              📍 Απόσταση: <em>—</em>
+            </p>
+          )}
+
+          {/* Chat button */}
+          <button
+            style={styles.chatButton}
+            onClick={(e) => {
+              e.stopPropagation();
+              setActiveChat({
+                transactionId: tx.id,
+                receiverId: tx.owner?.id,
+              });
+            }}
+          >
+            💬 Συνομιλία
+          </button>
+
+          {/* Δράσεις REQUESTER */}
+          {isRequester && (
+            <div
+              style={{
+                marginTop: 10,
+                display: "flex",
+                gap: 8,
+                flexWrap: "wrap",
+              }}
+            >
+              {/* Ανταλλαγή: Pending confirmation */}
+              {tx.transaction_type === "exchange" &&
+                tx.status === "pending_confirmation" && (
+                  <>
+                    <button
+                      style={styles.primaryBtn}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onConfirmExchange();
+                      }}
+                    >
+                      🔁 Επιβεβαίωση ανταλλαγής
+                    </button>
+                    <button
+                      style={styles.dangerBtn}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onRejectExchange();
+                      }}
+                    >
+                      🚫 Απόρριψη
+                    </button>
+                  </>
+                )}
+
+              {/* Δανεισμός: Accepted → Δήλωση επιστροφής */}
+              {tx.transaction_type === "loan" && tx.status === "accepted" && (
+                <button
+                  style={styles.secondaryBtn}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onReturnLoan();
+                  }}
+                >
+                  ↩️ Δήλωση επιστροφής
                 </button>
-                <button style={styles.dangerBtn} onClick={onRejectExchange}>
-                  🚫 Απόρριψη
-                </button>
-              </>
-            )}
-
-          {/* Δανεισμός: Accepted → Δήλωση επιστροφής */}
-          {tx.transaction_type === "loan" && tx.status === "accepted" && (
-            <button style={styles.secondaryBtn} onClick={onReturnLoan}>
-              ↩️ Δήλωση επιστροφής
-            </button>
+              )}
+            </div>
           )}
         </div>
       )}
@@ -824,7 +1027,10 @@ const styles = {
     borderRadius: "10px",
     padding: "15px",
     marginBottom: "15px",
+    cursor: "pointer",
+    transition: "background 0.2s ease",
   },
+
   link: { color: "#007bff", textDecoration: "none" },
   reviewBox: {
     background: "#f1f1f1",
@@ -998,5 +1204,28 @@ const styles = {
     display: "flex",
     flexDirection: "column",
     gap: 8,
+  },
+  subTabContainer: {
+    display: "flex",
+    justifyContent: "center",
+    gap: "10px",
+    marginBottom: "15px",
+    marginTop: "10px",
+  },
+  subTab: {
+    background: "#e0e0e0",
+    border: "none",
+    padding: "6px 14px",
+    borderRadius: "8px",
+    cursor: "pointer",
+  },
+  activeSubTab: {
+    background: "#28a745",
+    color: "white",
+    border: "none",
+    padding: "6px 14px",
+    borderRadius: "8px",
+    cursor: "pointer",
+    fontWeight: "bold",
   },
 };

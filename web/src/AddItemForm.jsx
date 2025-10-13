@@ -12,6 +12,8 @@ export default function AddItemForm({ onAddItem }) {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [transactionType, setTransactionType] = useState("exchange");
+  const [category, setCategory] = useState("other");
+  const [deliveryMethod, setDeliveryMethod] = useState("in_person"); // 🆕 νέο state
   const [terms, setTerms] = useState("");
   const [image, setImage] = useState(null);
   const [preview, setPreview] = useState(null);
@@ -47,6 +49,8 @@ export default function AddItemForm({ onAddItem }) {
     formData.append("title", name);
     formData.append("description", description);
     formData.append("transaction_type", transactionType);
+    formData.append("category", category);
+    formData.append("delivery_method", deliveryMethod); // 🆕 προστέθηκε
     formData.append("available", true);
 
     // Μόνο αν είναι loan ή either αποστέλλονται οι όροι
@@ -84,6 +88,8 @@ export default function AddItemForm({ onAddItem }) {
       setName("");
       setDescription("");
       setTransactionType("exchange");
+      setCategory("other");
+      setDeliveryMethod("in_person"); // 🆕 reset
       setTerms("");
       setImage(null);
       setPreview(null);
@@ -127,7 +133,36 @@ export default function AddItemForm({ onAddItem }) {
         <option value="either">🔁🤝 Ανταλλαγή ή Δανεισμός</option>
       </select>
 
-      {/*Όροι διάθεσης — εμφανίζονται μόνο για loan ή either */}
+      {/* Κατηγορία αντικειμένου */}
+      <label style={styles.label}>Κατηγορία *</label>
+      <select
+        value={category}
+        onChange={(e) => setCategory(e.target.value)}
+        style={styles.select}
+      >
+        <option value="electronics">💻 Ηλεκτρονικά</option>
+        <option value="books">📚 Βιβλία</option>
+        <option value="clothing">👕 Ρούχα</option>
+        <option value="furniture">🪑 Έπιπλα</option>
+        <option value="sports">⚽ Αθλητικά</option>
+        <option value="tools">🔧 Εργαλεία</option>
+        <option value="other">📦 Άλλο</option>
+      </select>
+
+      {/* 🆕 Τρόπος Παράδοσης */}
+      <label style={styles.label}>Τρόπος Παράδοσης *</label>
+      <select
+        value={deliveryMethod}
+        onChange={(e) => setDeliveryMethod(e.target.value)}
+        style={styles.select}
+      >
+        <option value="in_person">🤝 Χέρι με χέρι</option>
+        <option value="shipping">📦 Αποστολή με courier</option>
+        <option value="pickup_point">📍 Σημείο συνάντησης</option>
+        <option value="other">📋 Άλλο</option>
+      </select>
+
+      {/* Όροι διάθεσης — εμφανίζονται μόνο για loan ή either */}
       {(transactionType === "loan" || transactionType === "either") && (
         <>
           <label style={styles.label}>Όροι διάθεσης (προαιρετικά)</label>

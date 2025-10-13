@@ -4,9 +4,7 @@ from users.serializers import UserSerializer  # ✅ για nested owner/requeste
 from items.serializers import ItemSerializer
 
 
-from rest_framework import serializers
-from .models import Review
-
+# -------------------- Review Serializer -------------------- #
 class ReviewSerializer(serializers.ModelSerializer):
     reviewer = serializers.SerializerMethodField()
     reviewed_user = serializers.SerializerMethodField()
@@ -24,7 +22,6 @@ class ReviewSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ['id', 'reviewer', 'reviewed_user', 'created_at']
 
-    # Επιστρέφει τα βασικά στοιχεία του reviewer
     def get_reviewer(self, obj):
         if obj.reviewer:
             return {
@@ -34,7 +31,6 @@ class ReviewSerializer(serializers.ModelSerializer):
             }
         return None
 
-    # Επιστρέφει τα βασικά στοιχεία του χρήστη που αξιολογείται
     def get_reviewed_user(self, obj):
         if obj.reviewed_user:
             return {
@@ -45,6 +41,7 @@ class ReviewSerializer(serializers.ModelSerializer):
         return None
 
 
+# -------------------- Transaction Serializer -------------------- #
 class TransactionSerializer(serializers.ModelSerializer):
     # Nested user info ώστε React να διαβάζει tx.owner.username / tx.requester.username
     owner = UserSerializer(read_only=True)
@@ -56,6 +53,11 @@ class TransactionSerializer(serializers.ModelSerializer):
 
     # Nested reviews
     reviews = ReviewSerializer(many=True, read_only=True)
+
+    # 🧭 Νέο πεδίο: απόσταση μεταξύ owner και requester (από το model @property)
+    distance_km = serializers.ReadOnlyField()
+    def get_distance_km(self, obj):
+        return obj.distance_km  # υπολογίζεται από το @property
 
     class Meta:
         model = Transaction
@@ -79,6 +81,8 @@ class TransactionSerializer(serializers.ModelSerializer):
             'requested_item_title',
             # reviews
             'reviews',
+            # νέο field
+            'distance_km',
         ]
         read_only_fields = [
             'id',
@@ -89,6 +93,7 @@ class TransactionSerializer(serializers.ModelSerializer):
             'returned_at',
         ]
 
+    # -------------------- Validation -------------------- #
     def validate(self, data):
         """
         Ελέγχει:

@@ -10,10 +10,11 @@ export default function ProfilePage() {
   const [profile, setProfile] = useState(null);
   const [reviews, setReviews] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [updatingLocation, setUpdatingLocation] = useState(false);
 
   const isOwnProfile = !id || Number(id) === user?.id;
 
-  // 🔹 Φόρτωση προφίλ (εαυτός ή άλλος)
+  // 🔹 Φόρτωση προφίλ (τρέχοντος ή άλλου χρήστη)
   useEffect(() => {
     if (!token) return;
     const url = id
@@ -28,7 +29,7 @@ export default function ProfilePage() {
       .catch((err) => console.error("Σφάλμα φόρτωσης προφίλ:", err));
   }, [id, token]);
 
-  // 💬 Φόρτωση αξιολογήσεων
+  // 🔹 Φόρτωση αξιολογήσεων
   useEffect(() => {
     if (!token || !user) return;
     const userId = id || user.id;
@@ -42,6 +43,76 @@ export default function ProfilePage() {
       .finally(() => setLoading(false));
   }, [token, user, id]);
 
+  // 🧭 Ενημέρωση τοποθεσίας (με επιβεβαίωση αν υπάρχει ήδη)
+  const handleUpdateLocation = async () => {
+    if (!navigator.geolocation) {
+      toast.error("Το geolocation δεν υποστηρίζεται στον browser σου.");
+      return;
+    }
+
+    // Αν υπάρχει ήδη αποθηκευμένη τοποθεσία → ρώτα για επιβεβαίωση
+    if (profile?.latitude && profile?.longitude) {
+      const confirmChange = window.confirm(
+        "Έχεις ήδη αποθηκευμένη τοποθεσία. Θες να την ενημερώσεις;"
+      );
+      if (!confirmChange) return;
+    }
+
+    setUpdatingLocation(true);
+
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        const { latitude, longitude } = pos.coords;
+
+        try {
+          // Reverse geocoding με OpenStreetMap
+          const resp = await fetch(
+            `https://nominatim.openstreetmap.org/reverse?lat=${latitude}&lon=${longitude}&format=json`
+          );
+          const data = await resp.json();
+          const location_name =
+            data.address?.city ||
+            data.address?.town ||
+            data.address?.village ||
+            data.address?.state ||
+            "Άγνωστη περιοχή";
+
+          const res = await fetch(
+            "http://localhost:8000/api/users/update_location/",
+            {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${token}`,
+              },
+              body: JSON.stringify({ latitude, longitude, location_name }),
+            }
+          );
+
+          if (!res.ok) throw new Error("Αποτυχία ενημέρωσης τοποθεσίας");
+
+          toast.success("Η τοποθεσία σου ενημερώθηκε επιτυχώς!");
+          setProfile((prev) => ({
+            ...prev,
+            latitude,
+            longitude,
+            location_name,
+          }));
+        } catch (err) {
+          toast.error("Σφάλμα: " + err.message);
+        } finally {
+          setUpdatingLocation(false);
+        }
+      },
+      (error) => {
+        setUpdatingLocation(false);
+        if (error.code === 1)
+          toast.error("Δεν δόθηκε άδεια πρόσβασης στην τοποθεσία.");
+        else toast.error("Αποτυχία λήψης τοποθεσίας.");
+      }
+    );
+  };
+
   if (!user) {
     return (
       <div style={styles.container}>
@@ -53,7 +124,7 @@ export default function ProfilePage() {
     );
   }
 
-  // ⏳ Υπολογισμός χρόνου λήξης token
+  // Υπολογισμός χρόνου λήξης token
   let timeLeftText = "";
   if (tokenExpiry) {
     const diff = Math.max(0, tokenExpiry - Date.now());
@@ -62,7 +133,7 @@ export default function ProfilePage() {
     timeLeftText = `${minutes}λ ${seconds}δ`;
   }
 
-  // Υπολογισμός θετικών/αρνητικών
+  // Υπολογισμός θετικών αξιολογήσεων
   const totalReviews = reviews.length;
   const positive = reviews.filter((r) => r.rating >= 4).length;
   const positivePercent =
@@ -78,11 +149,30 @@ export default function ProfilePage() {
         <p>
           <strong>Όνομα χρήστη:</strong> {profile?.username || user.username}
         </p>
+
         {profile?.email && (
           <p>
             <strong>Email:</strong> {profile.email}
           </p>
         )}
+
+        {/* 🧭 Εμφάνιση τελευταίας αποθηκευμένης τοποθεσίας */}
+        {profile?.latitude && profile?.longitude ? (
+          <p style={{ marginTop: "10px" }}>
+            <strong>Τοποθεσία:</strong>{" "}
+            <span style={{ color: "#007bff", fontWeight: "bold" }}>
+              {profile.location_name || "Άγνωστη περιοχή"}
+            </span>{" "}
+            <small style={{ color: "#666" }}>
+              ({profile.latitude.toFixed(4)}, {profile.longitude.toFixed(4)})
+            </small>
+          </p>
+        ) : (
+          <p style={{ marginTop: "10px", color: "#888" }}>
+            <strong>Τοποθεσία:</strong> — Δεν έχει οριστεί
+          </p>
+        )}
+
         {isOwnProfile && (
           <>
             <p>
@@ -93,9 +183,23 @@ export default function ProfilePage() {
                 ⏳ Λήγει σε: <strong>{timeLeftText}</strong>
               </p>
             )}
+
+            {/* 📍 Κουμπί ενημέρωσης τοποθεσίας */}
+            <button
+              onClick={handleUpdateLocation}
+              disabled={updatingLocation}
+              style={{
+                ...styles.link,
+                background: updatingLocation ? "#6c757d" : "#28a745",
+                marginTop: "10px",
+              }}
+            >
+              {updatingLocation ? "Ενημέρωση..." : "📍 Ενημέρωση Τοποθεσίας"}
+            </button>
           </>
         )}
 
+        {/* 🟡 Στατιστικά / αξιολογήσεις */}
         {profile && (
           <>
             <hr />
@@ -128,7 +232,7 @@ export default function ProfilePage() {
           </>
         )}
 
-        {/* 🔹 Νέο κουμπί: Προβολή αντικειμένων χρήστη */}
+        {/* 🔹 Προβολή αντικειμένων χρήστη */}
         {!isOwnProfile && profile && (
           <button
             onClick={() => navigate(`/user-items/${profile.username}`)}
@@ -203,6 +307,7 @@ function StarRating({ value }) {
   );
 }
 
+/* 🎨 Στυλ */
 const styles = {
   container: { maxWidth: "650px", margin: "50px auto", textAlign: "center" },
   card: {
@@ -244,6 +349,7 @@ const styles = {
     padding: "10px",
     borderRadius: "6px",
     textDecoration: "none",
+    cursor: "pointer",
   },
   button: {
     background: "#007bff",

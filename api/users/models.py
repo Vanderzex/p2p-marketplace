@@ -27,6 +27,11 @@ class User(AbstractUser):
         verbose_name="Φωτογραφία προφίλ"
     )
 
+    latitude = models.FloatField(null=True, blank=True)
+    longitude = models.FloatField(null=True, blank=True)
+    location_name = models.CharField(max_length=255, blank=True, null=True)  # optional readable address
+
+
     def update_average_rating(self):
         """
         Υπολογίζει και ενημερώνει τον μέσο όρο αξιολογήσεων
