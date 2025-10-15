@@ -83,6 +83,7 @@ class TransactionSerializer(serializers.ModelSerializer):
             'reviews',
             # νέο field
             'distance_km',
+            'delivery_method',
         ]
         read_only_fields = [
             'id',

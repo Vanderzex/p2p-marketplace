@@ -11,10 +11,12 @@ export default function ProfilePage() {
   const [reviews, setReviews] = useState([]);
   const [loading, setLoading] = useState(true);
   const [updatingLocation, setUpdatingLocation] = useState(false);
+  const [profileImage, setProfileImage] = useState(null);
+  const [uploadingImage, setUploadingImage] = useState(false);
 
   const isOwnProfile = !id || Number(id) === user?.id;
 
-  // 🔹 Φόρτωση προφίλ (τρέχοντος ή άλλου χρήστη)
+  // 🔹 Φόρτωση προφίλ
   useEffect(() => {
     if (!token) return;
     const url = id
@@ -43,14 +45,13 @@ export default function ProfilePage() {
       .finally(() => setLoading(false));
   }, [token, user, id]);
 
-  // 🧭 Ενημέρωση τοποθεσίας (με επιβεβαίωση αν υπάρχει ήδη)
+  // 🧭 Ενημέρωση τοποθεσίας
   const handleUpdateLocation = async () => {
     if (!navigator.geolocation) {
       toast.error("Το geolocation δεν υποστηρίζεται στον browser σου.");
       return;
     }
 
-    // Αν υπάρχει ήδη αποθηκευμένη τοποθεσία → ρώτα για επιβεβαίωση
     if (profile?.latitude && profile?.longitude) {
       const confirmChange = window.confirm(
         "Έχεις ήδη αποθηκευμένη τοποθεσία. Θες να την ενημερώσεις;"
@@ -65,7 +66,6 @@ export default function ProfilePage() {
         const { latitude, longitude } = pos.coords;
 
         try {
-          // Reverse geocoding με OpenStreetMap
           const resp = await fetch(
             `https://nominatim.openstreetmap.org/reverse?lat=${latitude}&lon=${longitude}&format=json`
           );
@@ -113,6 +113,35 @@ export default function ProfilePage() {
     );
   };
 
+  // 📸 Upload φωτογραφίας προφίλ
+  const handleImageUpload = async () => {
+    if (!profileImage) return toast.error("Επίλεξε πρώτα μια εικόνα.");
+    setUploadingImage(true);
+
+    const formData = new FormData();
+    formData.append("profile_image", profileImage);
+
+    try {
+      const res = await fetch("http://localhost:8000/api/upload-profile-image/", {
+        method: "PATCH",
+        headers: { Authorization: `Bearer ${token}` },
+        body: formData,
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || "Σφάλμα αποστολής εικόνας");
+
+      toast.success("✅ Φωτογραφία ενημερώθηκε!");
+      setProfile((prev) => ({
+        ...prev,
+        profile_image: URL.createObjectURL(profileImage),
+      }));
+    } catch (err) {
+      toast.error(err.message);
+    } finally {
+      setUploadingImage(false);
+    }
+  };
+
   if (!user) {
     return (
       <div style={styles.container}>
@@ -146,6 +175,48 @@ export default function ProfilePage() {
       </h1>
 
       <div style={styles.card}>
+        {/* 📸 Φωτογραφία Προφίλ */}
+        {profile?.profile_image ? (
+          <img
+            src={
+              profile.profile_image.startsWith("blob:")
+                ? profile.profile_image
+                : `http://localhost:8000${profile.profile_image}`
+            }
+            alt="profile"
+            style={{
+              width: "120px",
+              height: "120px",
+              borderRadius: "50%",
+              objectFit: "cover",
+              marginBottom: "10px",
+            }}
+          />
+        ) : (
+          <p>Δεν υπάρχει φωτογραφία προφίλ</p>
+        )}
+
+        {isOwnProfile && (
+          <div style={{ marginBottom: "15px" }}>
+            <input
+              type="file"
+              accept="image/*"
+              onChange={(e) => setProfileImage(e.target.files[0])}
+            />
+            <button
+              onClick={handleImageUpload}
+              disabled={uploadingImage}
+              style={{
+                ...styles.link,
+                background: uploadingImage ? "#6c757d" : "#007bff",
+                marginTop: "6px",
+              }}
+            >
+              {uploadingImage ? "Ανέβασμα..." : "📸 Ανέβασμα Εικόνας"}
+            </button>
+          </div>
+        )}
+
         <p>
           <strong>Όνομα χρήστη:</strong> {profile?.username || user.username}
         </p>
@@ -156,7 +227,7 @@ export default function ProfilePage() {
           </p>
         )}
 
-        {/* 🧭 Εμφάνιση τελευταίας αποθηκευμένης τοποθεσίας */}
+        {/* 🧭 Τοποθεσία */}
         {profile?.latitude && profile?.longitude ? (
           <p style={{ marginTop: "10px" }}>
             <strong>Τοποθεσία:</strong>{" "}
@@ -199,7 +270,7 @@ export default function ProfilePage() {
           </>
         )}
 
-        {/* 🟡 Στατιστικά / αξιολογήσεις */}
+        {/* 🟡 Στατιστικά */}
         {profile && (
           <>
             <hr />
@@ -232,7 +303,6 @@ export default function ProfilePage() {
           </>
         )}
 
-        {/* 🔹 Προβολή αντικειμένων χρήστη */}
         {!isOwnProfile && profile && (
           <button
             onClick={() => navigate(`/user-items/${profile.username}`)}
@@ -272,7 +342,7 @@ export default function ProfilePage() {
         )}
       </div>
 
-      {/* 🔗 Συνδέσεις / Ενέργειες (μόνο δικό σου προφίλ) */}
+      {/* 🔗 Συνδέσεις / Ενέργειες */}
       {isOwnProfile && (
         <div style={styles.links}>
           <Link to="/my-items" style={styles.link}>
@@ -283,6 +353,9 @@ export default function ProfilePage() {
           </Link>
           <Link to="/add" style={styles.link}>
             ➕ Νέο αντικείμενο
+          </Link>
+          <Link to="/change-password" style={styles.link}>
+            🔑 Αλλαγή Κωδικού
           </Link>
           <button onClick={logout} style={styles.logout}>
             🚪 Αποσύνδεση

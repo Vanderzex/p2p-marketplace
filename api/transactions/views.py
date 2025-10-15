@@ -16,11 +16,33 @@ class TransactionViewSet(viewsets.ModelViewSet):
     serializer_class = TransactionSerializer
     permission_classes = [permissions.IsAuthenticated]
 
-    # Εμφάνιση μόνο συναλλαγών που αφορούν τον χρήστη
+    # Εμφάνιση μόνο συναλλαγών που αφορούν τον χρήστη + υποστήριξη φίλτρου τύπου
     def get_queryset(self):
         user = self.request.user
-        #user = getattr(self.request, "user", None)
-        return Transaction.objects.filter(Q(requester=user) | Q(owner=user)).order_by('-created_at')
+        queryset = Transaction.objects.filter(
+            Q(requester=user) | Q(owner=user)
+        ).order_by('-created_at')
+
+        # 🔹 Προσθήκη query param ?type=incoming/outgoing/history
+        filter_type = self.request.query_params.get('type')
+
+        if filter_type == 'incoming':
+            queryset = queryset.filter(
+                owner=user
+            ).exclude(status__in=['completed', 'rejected'])
+
+        elif filter_type == 'outgoing':
+            queryset = queryset.filter(
+                requester=user
+            ).exclude(status__in=['completed', 'rejected'])
+
+        elif filter_type == 'history':
+            queryset = queryset.filter(
+                Q(owner=user) | Q(requester=user),
+                status__in=['completed', 'rejected']
+            )
+
+        return queryset.distinct()
 
     # Δημιουργία νέας συναλλαγής
     def perform_create(self, serializer):
@@ -60,13 +82,17 @@ class TransactionViewSet(viewsets.ModelViewSet):
         if active_for_item:
             raise serializers.ValidationError({'error': 'Το αντικείμενο έχει ήδη ενεργή συναλλαγή.'})
 
+        # 🆕 Αντιγραφή τρόπου παράδοσης από το αντικείμενο
+        delivery_method = getattr(item, 'delivery_method', None)
+
         # Δημιουργία συναλλαγής
         transaction = serializer.save(
             requester=requester,
             owner=item.owner,
             item=item,
             transaction_type=transaction_type,
-            terms=item.terms or ""
+            terms=item.terms or "",
+            delivery_method=delivery_method  # 🆕 προστέθηκε
         )
 
         # Ειδοποίηση στον ιδιοκτήτη
@@ -77,7 +103,37 @@ class TransactionViewSet(viewsets.ModelViewSet):
             message=f"📩 Ο χρήστης {requester.username} ζήτησε συναλλαγή για το '{item.title}'."
         )
 
-    # Ενημέρωση κατάστασης
+        # Πρόταση τοποθεσίας (in_person / pickup_point)
+    @action(detail=True, methods=['post'])
+    def propose_location(self, request, pk=None):
+        tx = self.get_object()
+        if tx.delivery_method not in ["in_person", "pickup_point"]:
+            return Response({'error': 'Αυτός ο τρόπος παράδοσης δεν υποστηρίζει τοποθεσία.'},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        lat = request.data.get("lat")
+        lng = request.data.get("lng")
+
+        if not lat or not lng:
+            return Response({'error': 'Απαιτούνται συντεταγμένες (lat, lng).'}, status=status.HTTP_400_BAD_REQUEST)
+
+        tx.meeting_lat = lat
+        tx.meeting_lng = lng
+        tx.meeting_status = "proposed"
+        tx.save()
+
+        # Ειδοποίηση στον άλλο χρήστη
+        other_user = tx.owner if request.user == tx.requester else tx.requester
+        Notification.objects.create(
+            user=other_user,
+            sender=request.user,
+            transaction=tx,
+            message=f"📍 Ο χρήστης {request.user.username} πρότεινε σημείο συνάντησης."
+        )
+
+        return Response({'message': '✅ Η τοποθεσία προτάθηκε επιτυχώς.'})
+
+    # Ενημέρωση κατάστασης (Partial Update)
     def partial_update(self, request, *args, **kwargs):
         instance = self.get_object()
         user = request.user
@@ -152,7 +208,6 @@ class TransactionViewSet(viewsets.ModelViewSet):
         tx.status = 'pending_confirmation'
         tx.save()
 
-        # Ειδοποίηση στον αιτούντα
         Notification.objects.create(
             user=tx.requester,
             sender=user,
@@ -180,7 +235,6 @@ class TransactionViewSet(viewsets.ModelViewSet):
         tx.requested_item.save()
         tx.save()
 
-        # Ειδοποίηση στον ιδιοκτήτη
         Notification.objects.create(
             user=tx.owner,
             sender=user,
@@ -205,7 +259,6 @@ class TransactionViewSet(viewsets.ModelViewSet):
         tx.returned_at = timezone.now()
         tx.save()
 
-        # 🔔 Ειδοποίηση στον ιδιοκτήτη
         Notification.objects.create(
             user=tx.owner,
             sender=user,
@@ -236,7 +289,6 @@ class TransactionViewSet(viewsets.ModelViewSet):
         tx.returned_at = timezone.now()
         tx.save()
 
-        # Ειδοποιήσεις και στους δύο
         for u in [tx.requester, tx.owner]:
             Notification.objects.create(
                 user=u,
@@ -247,7 +299,7 @@ class TransactionViewSet(viewsets.ModelViewSet):
 
         return Response({'message': '✅ Η συναλλαγή ολοκληρώθηκε.'})
 
-    # Προβολή συναλλαγών χρήστη
+    # Προβολή συναλλαγών άλλου χρήστη (προφίλ)
     @action(detail=False, methods=['get'], url_path='of_user/(?P<username>[\w.@+-]+)')
     def of_user(self, request, username=None):
         from django.contrib.auth import get_user_model
@@ -257,7 +309,9 @@ class TransactionViewSet(viewsets.ModelViewSet):
         except User.DoesNotExist:
             return Response({'error': 'Ο χρήστης δεν βρέθηκε.'}, status=status.HTTP_404_NOT_FOUND)
 
-        txs = Transaction.objects.filter(Q(requester=user) | Q(owner=user)).order_by('-created_at')
+        txs = Transaction.objects.filter(
+            Q(requester=user) | Q(owner=user)
+        ).order_by('-created_at')
         return Response(self.get_serializer(txs, many=True).data)
 
 

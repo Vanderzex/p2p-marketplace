@@ -15,6 +15,7 @@ import MyItemsPage from "./MyItemsPage";
 import MyTransactionsPage from "./MyTransactionsPage";
 import NotificationsBell from "./NotificationsBell";
 import NotificationsPage from "./NotificationsPage";
+import ChangePasswordPage from "./ChangePasswordPage";
 
 export default function App() {
   const [items, setItems] = useState([]);
@@ -151,7 +152,14 @@ export default function App() {
 }
 
 /** 🏠 Κεντρική σελίδα με αναζήτηση & φίλτρα */
-function HomePage({ items, setItems, loading, error, onAddItem, successMessage }) {
+function HomePage({
+  items,
+  setItems,
+  loading,
+  error,
+  onAddItem,
+  successMessage,
+}) {
   const [query, setQuery] = useState("");
   const [transactionType, setTransactionType] = useState("");
   const [category, setCategory] = useState(""); // 🆕 νέο φίλτρο κατηγορίας
@@ -159,6 +167,7 @@ function HomePage({ items, setItems, loading, error, onAddItem, successMessage }
   const [maxDistance, setMaxDistance] = useState("");
   const [userCoords, setUserCoords] = useState(null);
   const [isSearching, setIsSearching] = useState(false);
+  const [minRating, setMinRating] = useState("");
 
   const { token } = useAuth();
 
@@ -173,7 +182,11 @@ function HomePage({ items, setItems, loading, error, onAddItem, successMessage }
         const data = await res.json();
         if (data.latitude && data.longitude) {
           setUserCoords({ lat: data.latitude, lon: data.longitude });
-          console.log("✅ Φορτώθηκε τοποθεσία από backend:", data.latitude, data.longitude);
+          console.log(
+            "✅ Φορτώθηκε τοποθεσία από backend:",
+            data.latitude,
+            data.longitude
+          );
         }
       } catch (err) {
         console.error("Σφάλμα φόρτωσης τοποθεσίας χρήστη:", err);
@@ -214,12 +227,24 @@ function HomePage({ items, setItems, loading, error, onAddItem, successMessage }
       onlyAvailable,
     });
 
+    // ⚠️ Έλεγχος για περίπτωση που λείπει η τοποθεσία
+    if (maxDistance && !userCoords) {
+      toast.error(
+        "📍 Δεν έχει οριστεί τοποθεσία χρήστη. Πάτησε 'Χρήση τοποθεσίας' πρώτα!"
+      );
+      setIsSearching(false);
+      return;
+    }
+
     try {
       const params = new URLSearchParams();
       if (query) params.append("search", query);
       if (transactionType) params.append("transaction_type", transactionType);
-      if (category) params.append("category", category); // 🆕 προσθήκη στο URL
+      if (category) params.append("category", category);
       if (onlyAvailable) params.append("available", "true");
+      if (minRating) params.append("min_rating", minRating);
+
+      // ✅ Προσθήκη μόνο αν έχουμε πλήρη συντεταγμένα ΚΑΙ απόσταση
       if (userCoords && maxDistance) {
         params.append("lat", userCoords.lat);
         params.append("lon", userCoords.lon);
@@ -230,10 +255,12 @@ function HomePage({ items, setItems, loading, error, onAddItem, successMessage }
       console.log("🔗 URL που στέλνεται:", url);
 
       const res = await fetch(url);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       setItems(Array.isArray(data) ? data : data.results || []);
     } catch (err) {
       console.error("Σφάλμα φίλτρων:", err);
+      toast.error("Αποτυχία αναζήτησης 😢");
     } finally {
       setIsSearching(false);
     }
@@ -244,7 +271,9 @@ function HomePage({ items, setItems, loading, error, onAddItem, successMessage }
       {successMessage && <div style={styles.banner}>{successMessage}</div>}
 
       <h1 style={styles.title}>📦 P2P Marketplace</h1>
-      <p style={styles.subtitle}>Αναζήτησε, φίλτραρε και εξερεύνησε αντικείμενα κοντά σου</p>
+      <p style={styles.subtitle}>
+        Αναζήτησε, φίλτραρε και εξερεύνησε αντικείμενα κοντά σου
+      </p>
 
       <div style={styles.filters}>
         <input
@@ -265,7 +294,6 @@ function HomePage({ items, setItems, loading, error, onAddItem, successMessage }
           <option value="loan">Δανεισμός</option>
         </select>
 
-        {/* 🆕 Dropdown κατηγορίας */}
         <select
           value={category}
           onChange={(e) => setCategory(e.target.value)}
@@ -281,6 +309,20 @@ function HomePage({ items, setItems, loading, error, onAddItem, successMessage }
           <option value="other">Άλλο</option>
         </select>
 
+        {/* 🆕 Ελάχιστη βαθμολογία */}
+        <select
+          value={minRating}
+          onChange={(e) => setMinRating(e.target.value)}
+          style={styles.select}
+        >
+          <option value="">Όλες οι βαθμολογίες</option>
+          <option value="1">1 ⭐+</option>
+          <option value="2">2 ⭐+</option>
+          <option value="3">3 ⭐+</option>
+          <option value="4">4 ⭐+</option>
+          <option value="4.5">4.5 ⭐+</option>
+        </select>
+
         <label>
           <input
             type="checkbox"
@@ -291,7 +333,10 @@ function HomePage({ items, setItems, loading, error, onAddItem, successMessage }
           Μόνο διαθέσιμα
         </label>
 
-        <button onClick={getUserLocation} style={{ ...styles.button, marginLeft: "10px" }}>
+        <button
+          onClick={getUserLocation}
+          style={{ ...styles.button, marginLeft: "10px" }}
+        >
           📍 Χρήση τοποθεσίας
         </button>
 
@@ -349,6 +394,14 @@ function HomePage({ items, setItems, loading, error, onAddItem, successMessage }
                 🏷️ Κατηγορία: <strong>{item.category}</strong>
               </p>
 
+              {/* 🆕 Εμφάνιση μέσης βαθμολογίας ιδιοκτήτη */}
+              {item.owner_rating && (
+                <p style={{ marginTop: "4px", color: "#f1c40f" }}>
+                  ⭐ Μέση βαθμολογία ιδιοκτήτη:{" "}
+                  <strong>{item.owner_rating}</strong>
+                </p>
+              )}
+
               {item.distance_km && (
                 <p style={{ marginTop: "6px", color: "#007bff" }}>
                   📍 Απόσταση: <strong>{item.distance_km} km</strong>
@@ -373,8 +426,18 @@ const styles = {
     alignItems: "center",
     flexWrap: "wrap",
   },
-  logo: { textDecoration: "none", color: "white", fontWeight: "bold", fontSize: "18px" },
-  navLinks: { display: "flex", alignItems: "center", gap: "15px", flexWrap: "wrap" },
+  logo: {
+    textDecoration: "none",
+    color: "white",
+    fontWeight: "bold",
+    fontSize: "18px",
+  },
+  navLinks: {
+    display: "flex",
+    alignItems: "center",
+    gap: "15px",
+    flexWrap: "wrap",
+  },
   link: { textDecoration: "none", color: "white", fontWeight: "bold" },
   logoutBtn: {
     background: "white",
@@ -384,7 +447,12 @@ const styles = {
     padding: "6px 10px",
     cursor: "pointer",
   },
-  container: { fontFamily: "Arial, sans-serif", textAlign: "center", marginTop: "40px", padding: "20px" },
+  container: {
+    fontFamily: "Arial, sans-serif",
+    textAlign: "center",
+    marginTop: "40px",
+    padding: "20px",
+  },
   banner: {
     position: "fixed",
     top: 0,
@@ -413,8 +481,18 @@ const styles = {
     border: "1px solid #ccc",
     width: "220px",
   },
-  select: { padding: "6px 10px", borderRadius: "6px", border: "1px solid #ccc" },
-  list: { display: "flex", flexWrap: "wrap", justifyContent: "center", gap: "20px", marginTop: "30px" },
+  select: {
+    padding: "6px 10px",
+    borderRadius: "6px",
+    border: "1px solid #ccc",
+  },
+  list: {
+    display: "flex",
+    flexWrap: "wrap",
+    justifyContent: "center",
+    gap: "20px",
+    marginTop: "30px",
+  },
   card: {
     background: "#f7f7f7",
     borderRadius: "10px",
@@ -424,6 +502,12 @@ const styles = {
     textAlign: "left",
     cursor: "pointer",
   },
-  button: { padding: "6px 10px", borderRadius: "6px", border: "none", cursor: "pointer", fontWeight: "bold" },
+  button: {
+    padding: "6px 10px",
+    borderRadius: "6px",
+    border: "none",
+    cursor: "pointer",
+    fontWeight: "bold",
+  },
   error: { color: "red", fontWeight: "bold" },
 };

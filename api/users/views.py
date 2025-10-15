@@ -1,7 +1,9 @@
-from rest_framework import generics, permissions, status, viewsets
-from rest_framework.decorators import action, api_view, permission_classes
+from rest_framework import generics, viewsets, permissions, status
+from rest_framework.decorators import action
 from rest_framework.response import Response
+from rest_framework.parsers import MultiPartParser, FormParser
 from django.contrib.auth import get_user_model
+
 from .serializers import RegisterSerializer, UserSerializer
 
 User = get_user_model()
@@ -40,7 +42,7 @@ class UserViewSet(viewsets.ReadOnlyModelViewSet):
     Επιτρέπει:
       - GET /api/users/ → λίστα χρηστών
       - GET /api/users/<id>/ → προφίλ χρήστη
-      - POST /api/users/<id>/update_location/ → ενημέρωση τοποθεσίας (μόνο για τον εαυτό του)
+      - POST /api/users/update_location/ → ενημέρωση τοποθεσίας (μόνο για τον εαυτό του)
     """
     queryset = User.objects.all().order_by("id")
     serializer_class = UserSerializer
@@ -73,4 +75,66 @@ class UserViewSet(viewsets.ReadOnlyModelViewSet):
         return Response(
             {"detail": "Η τοποθεσία σου ενημερώθηκε επιτυχώς!"},
             status=status.HTTP_200_OK,
+        )
+
+
+# 🖼️ Ανέβασμα / ενημέρωση φωτογραφίας προφίλ
+class UploadProfileImageView(generics.UpdateAPIView):
+    """
+    Endpoint: PATCH /api/upload-profile-image/
+    Body: multipart/form-data → { "profile_image": <αρχείο> }
+    """
+    permission_classes = [permissions.IsAuthenticated]
+    parser_classes = [MultiPartParser, FormParser]
+
+    def patch(self, request, *args, **kwargs):
+        user = request.user
+        image = request.FILES.get("profile_image")
+        if not image:
+            return Response({"detail": "Δεν στάλθηκε εικόνα."}, status=status.HTTP_400_BAD_REQUEST)
+
+        user.profile_image = image
+        user.save()
+        return Response(
+            {"detail": "Η φωτογραφία προφίλ ενημερώθηκε επιτυχώς!"},
+            status=status.HTTP_200_OK
+        )
+
+
+# 🔒 Αλλαγή κωδικού πρόσβασης
+class ChangePasswordView(generics.UpdateAPIView):
+    """
+    Endpoint: PUT /api/change-password/
+    Body: { "old_password": "παλιός", "new_password": "νέος" }
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def update(self, request, *args, **kwargs):
+        user = request.user
+        old_password = request.data.get("old_password")
+        new_password = request.data.get("new_password")
+
+        if not old_password or not new_password:
+            return Response(
+                {"detail": "Απαιτούνται τα πεδία old_password και new_password."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        if not user.check_password(old_password):
+            return Response(
+                {"detail": "Ο παλιός κωδικός είναι λάθος."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        if len(new_password) < 6:
+            return Response(
+                {"detail": "Ο νέος κωδικός πρέπει να έχει τουλάχιστον 6 χαρακτήρες."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        user.set_password(new_password)
+        user.save()
+        return Response(
+            {"detail": "Ο κωδικός άλλαξε επιτυχώς!"},
+            status=status.HTTP_200_OK
         )

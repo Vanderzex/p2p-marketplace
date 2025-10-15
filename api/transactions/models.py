@@ -95,6 +95,20 @@ class Transaction(models.Model):
     terms = models.TextField(blank=True, null=True, verbose_name="Όροι Δανεισμού")
     borrower_accepted_terms = models.BooleanField(default=False, verbose_name="Αποδοχή Όρων από Αιτούντα")
 
+    delivery_method = models.CharField(max_length=20, blank=True, null=True)
+    meeting_lat = models.FloatField(blank=True, null=True)
+    meeting_lng = models.FloatField(blank=True, null=True)
+    meeting_status = models.CharField(
+        max_length=20,
+        choices=[
+            ('none', 'Καμία'),
+            ('proposed', 'Προτάθηκε'),
+            ('accepted', 'Αποδεκτή'),
+            ('rejected', 'Απορρίφθηκε')
+        ],
+        default='none'
+    )
+
     def clean(self):
         """Έλεγχοι εγκυρότητας ανάλογα με το είδος συναλλαγής"""
         # ----- ΔΑΝΕΙΣΜΟΣ -----

@@ -27,6 +27,7 @@ class UserSerializer(serializers.ModelSerializer):
             # ➕ Στατιστικά
             "average_rating",
             "total_completed_transactions",
+            "profile_image",
         ]
 
     # Μέση αξιολόγηση
