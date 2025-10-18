@@ -16,7 +16,7 @@ export default function ProfilePage() {
 
   const isOwnProfile = !id || Number(id) === user?.id;
 
-  // 🔹 Φόρτωση προφίλ
+  // Φόρτωση προφίλ
   useEffect(() => {
     if (!token) return;
     const url = id
@@ -31,7 +31,7 @@ export default function ProfilePage() {
       .catch((err) => console.error("Σφάλμα φόρτωσης προφίλ:", err));
   }, [id, token]);
 
-  // 🔹 Φόρτωση αξιολογήσεων
+  // Φόρτωση αξιολογήσεων
   useEffect(() => {
     if (!token || !user) return;
     const userId = id || user.id;
@@ -45,7 +45,7 @@ export default function ProfilePage() {
       .finally(() => setLoading(false));
   }, [token, user, id]);
 
-  // 🧭 Ενημέρωση τοποθεσίας
+  // Ενημέρωση τοποθεσίας
   const handleUpdateLocation = async () => {
     if (!navigator.geolocation) {
       toast.error("Το geolocation δεν υποστηρίζεται στον browser σου.");
@@ -113,7 +113,7 @@ export default function ProfilePage() {
     );
   };
 
-  // 📸 Upload φωτογραφίας προφίλ
+  // Upload φωτογραφίας προφίλ (μόνιμη αποθήκευση)
   const handleImageUpload = async () => {
     if (!profileImage) return toast.error("Επίλεξε πρώτα μια εικόνα.");
     setUploadingImage(true);
@@ -122,21 +122,27 @@ export default function ProfilePage() {
     formData.append("profile_image", profileImage);
 
     try {
-      const res = await fetch("http://localhost:8000/api/upload-profile-image/", {
-        method: "PATCH",
-        headers: { Authorization: `Bearer ${token}` },
-        body: formData,
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || "Σφάλμα αποστολής εικόνας");
+      const res = await fetch(
+        "http://localhost:8000/api/upload-profile-image/",
+        {
+          method: "PATCH",
+          headers: { Authorization: `Bearer ${token}` },
+          body: formData,
+        }
+      );
 
-      toast.success("✅ Φωτογραφία ενημερώθηκε!");
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Σφάλμα αποστολής εικόνας");
+
+      // Αντί για προσωρινό blob, χρησιμοποίησε το URL από το backend
+      toast.success("✅ Φωτογραφία αποθηκεύτηκε επιτυχώς!");
       setProfile((prev) => ({
         ...prev,
-        profile_image: URL.createObjectURL(profileImage),
+        //profile_image: `http://localhost:8000${data.profile_image}`,
+        profile_image_url: data.profile_image,
       }));
     } catch (err) {
-      toast.error(err.message);
+      toast.error("Σφάλμα: " + err.message);
     } finally {
       setUploadingImage(false);
     }
@@ -171,18 +177,17 @@ export default function ProfilePage() {
   return (
     <div style={styles.container}>
       <h1>
-        👤 {isOwnProfile ? "Το προφίλ μου" : `Προφίλ χρήστη ${profile?.username || ""}`}
+        👤{" "}
+        {isOwnProfile
+          ? "Το προφίλ μου"
+          : `Προφίλ χρήστη ${profile?.username || ""}`}
       </h1>
 
       <div style={styles.card}>
-        {/* 📸 Φωτογραφία Προφίλ */}
-        {profile?.profile_image ? (
+        {/* Φωτογραφία Προφίλ */}
+        {profile?.profile_image_url ? (
           <img
-            src={
-              profile.profile_image.startsWith("blob:")
-                ? profile.profile_image
-                : `http://localhost:8000${profile.profile_image}`
-            }
+            src={profile.profile_image_url}
             alt="profile"
             style={{
               width: "120px",
@@ -198,22 +203,53 @@ export default function ProfilePage() {
 
         {isOwnProfile && (
           <div style={{ marginBottom: "15px" }}>
-            <input
-              type="file"
-              accept="image/*"
-              onChange={(e) => setProfileImage(e.target.files[0])}
-            />
-            <button
-              onClick={handleImageUpload}
-              disabled={uploadingImage}
-              style={{
-                ...styles.link,
-                background: uploadingImage ? "#6c757d" : "#007bff",
-                marginTop: "6px",
-              }}
-            >
-              {uploadingImage ? "Ανέβασμα..." : "📸 Ανέβασμα Εικόνας"}
-            </button>
+            {/* 🆕 Κουμπί που εμφανίζει το input */}
+            {!profileImage || profileImage === "UPLOADED" ? (
+              <button
+                onClick={() => setProfileImage("PENDING")}
+                style={{
+                  ...styles.link,
+                  background: "#007bff",
+                  marginBottom: "6px",
+                }}
+              >
+                {profile?.profile_image_url
+                  ? "📸 Αλλαγή Εικόνας"
+                  : "📸 Ανέβασμα Εικόνας"}
+              </button>
+            ) : null}
+
+            {/* 🆕 Input + Επιβεβαίωση */}
+            {profileImage === "PENDING" && (
+              <>
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={(e) => setProfileImage(e.target.files[0])}
+                />
+                <button
+                  onClick={async () => {
+                    // Αν δεν υπάρχει εικόνα → ακυρώνουμε χωρίς αποστολή
+                    if (!profileImage || profileImage === "PENDING") {
+                      setProfileImage("UPLOADED");
+                      return;
+                    }
+
+                    // Διαφορετικά προχωράμε σε αποστολή
+                    await handleImageUpload();
+                    setProfileImage("UPLOADED");
+                  }}
+                  disabled={uploadingImage}
+                  style={{
+                    ...styles.link,
+                    background: uploadingImage ? "#6c757d" : "#28a745",
+                    marginTop: "6px",
+                  }}
+                >
+                  {uploadingImage ? "Ανέβασμα..." : "✅ Επιβεβαίωση"}
+                </button>
+              </>
+            )}
           </div>
         )}
 
@@ -227,7 +263,7 @@ export default function ProfilePage() {
           </p>
         )}
 
-        {/* 🧭 Τοποθεσία */}
+        {/* Τοποθεσία */}
         {profile?.latitude && profile?.longitude ? (
           <p style={{ marginTop: "10px" }}>
             <strong>Τοποθεσία:</strong>{" "}
@@ -255,7 +291,7 @@ export default function ProfilePage() {
               </p>
             )}
 
-            {/* 📍 Κουμπί ενημέρωσης τοποθεσίας */}
+            {/* Κουμπί ενημέρωσης τοποθεσίας */}
             <button
               onClick={handleUpdateLocation}
               disabled={updatingLocation}
@@ -270,7 +306,7 @@ export default function ProfilePage() {
           </>
         )}
 
-        {/* 🟡 Στατιστικά */}
+        {/* Στατιστικά */}
         {profile && (
           <>
             <hr />
@@ -297,8 +333,8 @@ export default function ProfilePage() {
               {profile.total_completed_transactions || 0}
             </p>
             <p>
-              <strong>Θετικές αξιολογήσεις:</strong>{" "}
-              {positivePercent}% ({positive}/{totalReviews})
+              <strong>Θετικές αξιολογήσεις:</strong> {positivePercent}% (
+              {positive}/{totalReviews})
             </p>
           </>
         )}
@@ -313,7 +349,7 @@ export default function ProfilePage() {
         )}
       </div>
 
-      {/* 💬 Πρόσφατες αξιολογήσεις */}
+      {/* Πρόσφατες αξιολογήσεις */}
       <div style={styles.card}>
         <h3>💬 Πρόσφατες αξιολογήσεις</h3>
         {loading ? (
@@ -327,11 +363,27 @@ export default function ProfilePage() {
             .map((r) => (
               <div key={r.id} style={styles.reviewBox}>
                 <p>
-                  <strong>Από:</strong> {r.reviewer?.username || "Άγνωστος"} <br />
-                  ⭐ {r.rating}/5
+                  <strong>Από:</strong>{" "}
+                  {r.reviewer ? (
+                    <Link
+                      to={`/profile/${r.reviewer.id}`}
+                      style={{
+                        color: "#007bff",
+                        textDecoration: "none",
+                        fontWeight: "bold",
+                      }}
+                    >
+                      {r.reviewer.username}
+                    </Link>
+                  ) : (
+                    "Άγνωστος"
+                  )}{" "}
+                  <br />⭐ {r.rating}/5
                 </p>
                 {r.comment && (
-                  <p style={{ fontStyle: "italic", color: "#555" }}>{r.comment}</p>
+                  <p style={{ fontStyle: "italic", color: "#555" }}>
+                    {r.comment}
+                  </p>
                 )}
                 <small style={{ color: "#888" }}>
                   {new Date(r.created_at).toLocaleDateString("el-GR")}
@@ -340,9 +392,26 @@ export default function ProfilePage() {
               </div>
             ))
         )}
+
+        {/* Κουμπί για όλες τις αξιολογήσεις */}
+        {reviews.length > 0 && (
+          <Link
+            to={`/user-reviews/${id || user.id}`}
+            style={{
+              display: "inline-block",
+              marginTop: "10px",
+              color: "#007bff",
+              fontWeight: "bold",
+              textDecoration: "none",
+              cursor: "pointer",
+            }}
+          >
+            ➕ Δες όλες τις αξιολογήσεις
+          </Link>
+        )}
       </div>
 
-      {/* 🔗 Συνδέσεις / Ενέργειες */}
+      {/* Συνδέσεις / Ενέργειες */}
       {isOwnProfile && (
         <div style={styles.links}>
           <Link to="/my-items" style={styles.link}>
@@ -366,7 +435,7 @@ export default function ProfilePage() {
   );
 }
 
-/* ⭐ Εμφάνιση αστεριών */
+/* Εμφάνιση αστεριών */
 function StarRating({ value }) {
   const rounded = Math.round(value || 0);
   return (
@@ -380,7 +449,7 @@ function StarRating({ value }) {
   );
 }
 
-/* 🎨 Στυλ */
+/* Στυλ */
 const styles = {
   container: { maxWidth: "650px", margin: "50px auto", textAlign: "center" },
   card: {

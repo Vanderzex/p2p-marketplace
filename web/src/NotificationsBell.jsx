@@ -10,18 +10,18 @@ export default function NotificationsBell() {
   const [open, setOpen] = useState(false);
   const navigate = useNavigate();
 
-  // 📡 Ανάκτηση ειδοποιήσεων (πλήθος + λίστα)
+  // Ανάκτηση ειδοποιήσεων (πλήθος + λίστα)
   const fetchNotifications = async () => {
     if (!token) return;
     try {
-      // 🔢 Πλήθος αδιάβαστων
+      // Πλήθος αδιάβαστων
       const resCount = await fetch("http://localhost:8000/api/notifications/unread_count/", {
         headers: { Authorization: `Bearer ${token}` },
       });
       const countData = await resCount.json();
       setUnreadCount(countData.unread_count || 0);
 
-      // 📜 Αν είναι ανοιχτό το dropdown, φέρε και τη λίστα
+      // Αν είναι ανοιχτό το dropdown, φέρε και τη λίστα
       if (open) {
         const resList = await fetch("http://localhost:8000/api/notifications/", {
           headers: { Authorization: `Bearer ${token}` },
@@ -29,19 +29,19 @@ export default function NotificationsBell() {
         if (!resList.ok) throw new Error("Σφάλμα φόρτωσης ειδοποιήσεων");
         const listData = await resList.json();
 
-        // ✅ Προσαρμογή σε όλες τις περιπτώσεις (pagination ή όχι)
+        // Προσαρμογή σε όλες τις περιπτώσεις (pagination ή όχι)
         const list = Array.isArray(listData)
           ? listData
           : listData.results
           ? listData.results
           : [];
 
-        // 🔹 Ταξινόμηση (πιο πρόσφατες πρώτες)
+        // Ταξινόμηση (πιο πρόσφατες πρώτες)
         const sorted = [...list].sort(
           (a, b) => new Date(b.created_at) - new Date(a.created_at)
         );
 
-        // 🔹 Εμφάνιση μόνο των 5 πιο πρόσφατων
+        // Εμφάνιση μόνο των 5 πιο πρόσφατων
         setNotifications(sorted.slice(0, 5));
       }
     } catch (err) {
@@ -55,7 +55,7 @@ export default function NotificationsBell() {
     return () => clearInterval(interval);
   }, [token, open]);
 
-  // ✅ Μαρκάρισμα όλων ως διαβασμένων
+  // Μαρκάρισμα όλων ως διαβασμένων
   const markAllAsRead = async () => {
     try {
       await fetch("http://localhost:8000/api/notifications/mark_all_read/", {
@@ -69,7 +69,7 @@ export default function NotificationsBell() {
     }
   };
 
-  // 📨 Click σε ειδοποίηση
+  // Click σε ειδοποίηση
   const handleClick = (n) => {
     setOpen(false);
 
@@ -147,7 +147,7 @@ export default function NotificationsBell() {
             ))
           )}
 
-          {/* 🔹 Κουμπί "Δες όλες" */}
+          {/* Κουμπί "Δες όλες" */}
           <div style={styles.footer}>
             <button
               style={styles.viewAllBtn}

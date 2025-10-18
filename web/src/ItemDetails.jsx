@@ -47,21 +47,29 @@ export default function ItemDetails() {
     fetchItem();
   }, [id]);
 
-  const isOwner = user?.username === item?.owner;
+  const isOwner = user?.username === item?.owner_username;
 
   // Διαγραφή αντικειμένου
   const handleDelete = async () => {
     if (!token) return toast.error("Πρέπει να συνδεθείς πρώτα!");
-    if (!window.confirm("Είσαι σίγουρος ότι θέλεις να διαγράψεις αυτό το αντικείμενο;")) return;
+    if (
+      !window.confirm(
+        "Είσαι σίγουρος ότι θέλεις να διαγράψεις αυτό το αντικείμενο;"
+      )
+    )
+      return;
 
     try {
-      const response = await authFetch(`http://localhost:8000/api/items/${id}/`, {
-        method: "DELETE",
-      });
+      const response = await authFetch(
+        `http://localhost:8000/api/items/${id}/`,
+        {
+          method: "DELETE",
+        }
+      );
 
       if (response.status === 204) {
         toast.success("🗑️ Το αντικείμενο διαγράφηκε!");
-        navigate("/");
+        navigate("/", { state: { refreshItems: true } }); 
       } else if (response.status === 403) {
         toast.error("🚫 Δεν έχεις δικαίωμα διαγραφής αυτού του αντικειμένου");
       } else {
@@ -88,11 +96,14 @@ export default function ItemDetails() {
     formData.append("image", newImage);
 
     try {
-      const response = await fetch(`http://localhost:8000/api/items/${id}/upload_image/`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}` },
-        body: formData,
-      });
+      const response = await fetch(
+        `http://localhost:8000/api/items/${id}/upload_image/`,
+        {
+          method: "POST",
+          headers: { Authorization: `Bearer ${token}` },
+          body: formData,
+        }
+      );
 
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       toast.success("📸 Η εικόνα ανέβηκε!");
@@ -105,24 +116,29 @@ export default function ItemDetails() {
     }
   };
 
-  // Ενημέρωση αντικειμένου
+  // Ενημέρωση αντικειμένου (τίτλος, περιγραφή, τύπος, τρόπος παράδοσης, διαθεσιμότητα)
   const handleSave = async () => {
     if (!token) return toast.error("Πρέπει να συνδεθείς πρώτα!");
 
-    const formData = new FormData();
-    formData.append("title", editedItem.title);
-    formData.append("description", editedItem.description);
-    formData.append("transaction_type", editedItem.transaction_type);
-    formData.append("available", editedItem.available);
-    if (newImage) formData.append("main_image", newImage);
-
     try {
-      const response = await authFetch(`http://localhost:8000/api/items/${id}/`, {
-        method: "PUT",
-        body: formData,
-      });
+      const response = await authFetch(
+        `http://localhost:8000/api/items/${id}/`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            title: editedItem.title,
+            description: editedItem.description,
+            transaction_type: editedItem.transaction_type,
+            delivery_method: editedItem.delivery_method,
+            available: editedItem.available,
+          }),
+        }
+      );
 
       if (!response.ok) {
+        const text = await response.text();
+        console.log("🧩 Response:", text);
         toast.error("❌ Αποτυχία ενημέρωσης αντικειμένου");
         return;
       }
@@ -140,26 +156,33 @@ export default function ItemDetails() {
   const handleSendTransaction = async (e) => {
     e.preventDefault();
     if (!token) return toast.error("Πρέπει να συνδεθείς πρώτα!");
-    if (isOwner) return toast.error("Δεν μπορείς να στείλεις αίτημα στο δικό σου αντικείμενο!");
+    if (isOwner)
+      return toast.error(
+        "Δεν μπορείς να στείλεις αίτημα στο δικό σου αντικείμενο!"
+      );
 
     if (transactionType === "loan" && item.terms && !acceptedTerms) {
       return toast.error("Πρέπει να αποδεχτείς τους όρους πριν την αποστολή!");
     }
 
     try {
-      const response = await authFetch("http://localhost:8000/api/transactions/", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          item: item.id,
-          transaction_type: transactionType,
-          message,
-          start_date: transactionType === "loan" ? startDate : null,
-          end_date: transactionType === "loan" ? endDate : null,
-          terms: transactionType === "loan" ? item.terms : null,
-          borrower_accepted_terms: transactionType === "loan" ? acceptedTerms : false,
-        }),
-      });
+      const response = await authFetch(
+        "http://localhost:8000/api/transactions/",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            item: item.id,
+            transaction_type: transactionType,
+            message,
+            start_date: transactionType === "loan" ? startDate : null,
+            end_date: transactionType === "loan" ? endDate : null,
+            terms: transactionType === "loan" ? item.terms : null,
+            borrower_accepted_terms:
+              transactionType === "loan" ? acceptedTerms : false,
+          }),
+        }
+      );
 
       if (response.ok) {
         toast.success("📩 Το αίτημα στάλθηκε επιτυχώς!");
@@ -235,13 +258,13 @@ export default function ItemDetails() {
             : "🔁🤝 Ανταλλαγή ή Δανεισμός"}
         </p>
         <p>
-          <strong>Κατάσταση:</strong> {item.available ? "✅ Διαθέσιμο" : "❌ Μη διαθέσιμο"}
+          <strong>Κατάσταση:</strong>{" "}
+          {item.available ? "✅ Διαθέσιμο" : "❌ Μη διαθέσιμο"}
         </p>
         <p>
           <strong>Ιδιοκτήτης:</strong> {item.owner_username || "Άγνωστος"}
         </p>
 
-        {/* 🆕 Τρόπος Παράδοσης */}
         <p>
           <strong>🚚 Τρόπος Παράδοσης:</strong>{" "}
           {item.delivery_method === "in_person"
@@ -253,9 +276,13 @@ export default function ItemDetails() {
             : "Άλλο"}
         </p>
 
-        {isOwner && (
+        {/* Κουμπιά για ιδιοκτήτη */}
+        {isOwner && !isEditing && (
           <div style={styles.buttonsRow}>
-            <button onClick={() => setIsEditing(true)} style={styles.editButton}>
+            <button
+              onClick={() => setIsEditing(true)}
+              style={styles.editButton}
+            >
               ✏️ Επεξεργασία
             </button>
             <button onClick={handleDelete} style={styles.deleteButton}>
@@ -263,9 +290,124 @@ export default function ItemDetails() {
             </button>
           </div>
         )}
+
+        {/* Λειτουργία επεξεργασίας */}
+        {isOwner && isEditing && (
+          <div style={{ ...styles.card, marginTop: "20px" }}>
+            <h3>🛠 Επεξεργασία αντικειμένου</h3>
+
+            <div style={styles.availabilityRow}>
+              <p style={{ margin: 0 }}>
+                <strong>Κατάσταση:</strong>{" "}
+                {item.available ? "✅ Διαθέσιμο" : "❌ Μη διαθέσιμο"}
+              </p>
+              <button
+                onClick={async () => {
+                  if (item.is_in_use) {
+                    toast.error("Το αντικείμενο χρησιμοποιείται σε συναλλαγή!");
+                    return;
+                  }
+                  try {
+                    const res = await authFetch(
+                      `http://localhost:8000/api/items/${id}/`,
+                      {
+                        method: "PATCH",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ available: !item.available }),
+                      }
+                    );
+                    if (!res.ok)
+                      throw new Error("Αποτυχία αλλαγής διαθεσιμότητας");
+                    toast.success(
+                      item.available
+                        ? "Το αντικείμενο έγινε μη διαθέσιμο."
+                        : "Το αντικείμενο έγινε διαθέσιμο ξανά!"
+                    );
+                    fetchItem();
+                  } catch (error) {
+                    console.error(error);
+                    toast.error("❌ Σφάλμα κατά την αλλαγή διαθεσιμότητας");
+                  }
+                }}
+                disabled={item.is_in_use}
+                style={{
+                  ...styles.toggleButtonSmall,
+                  opacity: item.is_in_use ? 0.6 : 1,
+                  cursor: item.is_in_use ? "not-allowed" : "pointer",
+                  background: item.available ? "#ff4d4f" : "#28a745",
+                }}
+              >
+                {item.available
+                  ? "🔒 Κάνε μη διαθέσιμο"
+                  : "✅ Επανενεργοποίησε"}
+              </button>
+            </div>
+
+            {item.is_in_use && (
+              <p
+                style={{ color: "#999", fontSize: "0.9rem", marginTop: "6px" }}
+              >
+                ⚠️ Δεν μπορεί να αλλαχθεί γιατί χρησιμοποιείται σε ενεργή
+                συναλλαγή.
+              </p>
+            )}
+
+            {item.is_in_use && (
+              <p style={{ color: "#999", fontSize: "0.9rem" }}>
+                ⚠️ Δεν μπορεί να αλλαχθεί γιατί χρησιμοποιείται σε ενεργή
+                συναλλαγή.
+              </p>
+            )}
+
+            {/* --- Νέα πεδία για επεξεργασία --- */}
+            <label>Τύπος Συναλλαγής:</label>
+            <select
+              value={editedItem.transaction_type}
+              onChange={(e) =>
+                setEditedItem({
+                  ...editedItem,
+                  transaction_type: e.target.value,
+                })
+              }
+              style={styles.select}
+            >
+              <option value="exchange">🔁 Ανταλλαγή</option>
+              <option value="loan">🤝 Δανεισμός</option>
+              <option value="either">🔁🤝 Και τα δύο</option>
+            </select>
+
+            <label>Τρόπος Παράδοσης:</label>
+            <select
+              value={editedItem.delivery_method || "in_person"}
+              onChange={(e) =>
+                setEditedItem({
+                  ...editedItem,
+                  delivery_method: e.target.value,
+                })
+              }
+              style={styles.select}
+            >
+              <option value="in_person">Χέρι με χέρι</option>
+              <option value="shipping">Αποστολή με courier</option>
+              <option value="pickup_point">Σημείο συνάντησης</option>
+            </select>
+
+            <div style={styles.buttonsRow}>
+              <button onClick={handleSave} style={styles.saveButton}>
+                💾 Αποθήκευση
+              </button>
+              <button
+                onClick={() => setIsEditing(false)}
+                style={styles.cancelButton}
+              >
+                ✖️ Άκυρο
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
-      {/* Φόρμα συναλλαγής (παραμένει ίδια) */}
+      {/* Φόρμα συναλλαγής */}
       {!isOwner && item.available && (
         <div style={styles.transactionSection}>
           {showTransactionForm ? (
@@ -284,14 +426,19 @@ export default function ItemDetails() {
                 ))}
               </select>
 
-              {/* Ανταλλαγή */}
               {transactionType === "exchange" && (
-                <p style={{ marginBottom: "10px", textAlign: "left", color: "#444" }}>
-                  Ο ιδιοκτήτης θα επιλέξει ποιο από τα αντικείμενά σου επιθυμεί για ανταλλαγή.
+                <p
+                  style={{
+                    marginBottom: "10px",
+                    textAlign: "left",
+                    color: "#444",
+                  }}
+                >
+                  Ο ιδιοκτήτης θα επιλέξει ποιο από τα αντικείμενά σου επιθυμεί
+                  για ανταλλαγή.
                 </p>
               )}
 
-              {/* Δανεισμός */}
               {transactionType === "loan" && (
                 <>
                   <div style={{ marginBottom: "10px" }}>
@@ -314,7 +461,13 @@ export default function ItemDetails() {
                   </div>
 
                   {item.terms && (
-                    <label style={{ display: "block", textAlign: "left", marginBottom: "10px" }}>
+                    <label
+                      style={{
+                        display: "block",
+                        textAlign: "left",
+                        marginBottom: "10px",
+                      }}
+                    >
                       <input
                         type="checkbox"
                         checked={acceptedTerms}
@@ -339,13 +492,18 @@ export default function ItemDetails() {
                   type="submit"
                   style={{
                     ...styles.saveButton,
-                    opacity: item.terms && transactionType === "loan" && !acceptedTerms ? 0.6 : 1,
+                    opacity:
+                      item.terms && transactionType === "loan" && !acceptedTerms
+                        ? 0.6
+                        : 1,
                     cursor:
                       item.terms && transactionType === "loan" && !acceptedTerms
                         ? "not-allowed"
                         : "pointer",
                   }}
-                  disabled={item.terms && transactionType === "loan" && !acceptedTerms}
+                  disabled={
+                    item.terms && transactionType === "loan" && !acceptedTerms
+                  }
                 >
                   📩 Αποστολή
                 </button>
@@ -359,7 +517,10 @@ export default function ItemDetails() {
               </div>
             </form>
           ) : (
-            <button onClick={() => setShowTransactionForm(true)} style={styles.requestButton}>
+            <button
+              onClick={() => setShowTransactionForm(true)}
+              style={styles.requestButton}
+            >
               📩 Αίτημα συναλλαγής
             </button>
           )}
@@ -384,25 +545,138 @@ export default function ItemDetails() {
 
 // Styling
 const styles = {
-  container: { maxWidth: "600px", margin: "50px auto", textAlign: "center", fontFamily: "Arial, sans-serif" },
+  container: {
+    maxWidth: "600px",
+    margin: "50px auto",
+    textAlign: "center",
+    fontFamily: "Arial, sans-serif",
+  },
   imageContainer: { marginBottom: "15px" },
-  image: { width: "100%", maxHeight: "300px", objectFit: "cover", borderRadius: "10px" },
-  noImage: { width: "100%", height: "200px", borderRadius: "10px", background: "#e0e0e0", display: "flex", justifyContent: "center", alignItems: "center", color: "#666" },
-  termsBox: { background: "#f8f9fa", border: "1px solid #ddd", borderRadius: "10px", padding: "15px", marginBottom: "15px", textAlign: "left" },
+  image: {
+    width: "100%",
+    maxHeight: "300px",
+    objectFit: "cover",
+    borderRadius: "10px",
+  },
+  noImage: {
+    width: "100%",
+    height: "200px",
+    borderRadius: "10px",
+    background: "#e0e0e0",
+    display: "flex",
+    justifyContent: "center",
+    alignItems: "center",
+    color: "#666",
+  },
+  termsBox: {
+    background: "#f8f9fa",
+    border: "1px solid #ddd",
+    borderRadius: "10px",
+    padding: "15px",
+    marginBottom: "15px",
+    textAlign: "left",
+  },
   termsText: { whiteSpace: "pre-wrap", fontSize: "0.95rem", color: "#333" },
-  card: { background: "#f7f7f7", borderRadius: "10px", boxShadow: "0 2px 5px rgba(0,0,0,0.1)", padding: "20px" },
-  form: { background: "#f7f7f7", borderRadius: "10px", boxShadow: "0 2px 5px rgba(0,0,0,0.1)", padding: "20px" },
-  textarea: { width: "100%", padding: "8px", marginBottom: "10px", borderRadius: "6px", border: "1px solid #ccc", minHeight: "60px" },
-  select: { width: "100%", padding: "8px", marginBottom: "10px", borderRadius: "6px", border: "1px solid #ccc" },
-  inputDate: { width: "100%", padding: "8px", marginBottom: "10px", borderRadius: "6px", border: "1px solid #ccc" },
+  card: {
+    background: "#f7f7f7",
+    borderRadius: "10px",
+    boxShadow: "0 2px 5px rgba(0,0,0,0.1)",
+    padding: "20px",
+  },
+  form: {
+    background: "#f7f7f7",
+    borderRadius: "10px",
+    boxShadow: "0 2px 5px rgba(0,0,0,0.1)",
+    padding: "20px",
+  },
+  textarea: {
+    width: "100%",
+    padding: "8px",
+    marginBottom: "10px",
+    borderRadius: "6px",
+    border: "1px solid #ccc",
+    minHeight: "60px",
+  },
+  select: {
+    width: "100%",
+    padding: "8px",
+    marginBottom: "10px",
+    borderRadius: "6px",
+    border: "1px solid #ccc",
+  },
+  inputDate: {
+    width: "100%",
+    padding: "8px",
+    marginBottom: "10px",
+    borderRadius: "6px",
+    border: "1px solid #ccc",
+  },
   buttonsRow: { display: "flex", justifyContent: "space-between", gap: "10px" },
-  editButton: { flex: 1, background: "#0275d8", color: "white", border: "none", borderRadius: "6px", padding: "8px" },
-  deleteButton: { flex: 1, background: "#d9534f", color: "white", border: "none", borderRadius: "6px", padding: "8px" },
-  saveButton: { flex: 1, background: "#28a745", color: "white", border: "none", borderRadius: "6px", padding: "8px" },
-  cancelButton: { flex: 1, background: "#6c757d", color: "white", border: "none", borderRadius: "6px", padding: "8px" },
-  requestButton: { background: "#007bff", color: "white", padding: "10px 20px", borderRadius: "8px", border: "none", cursor: "pointer", marginTop: "20px" },
-  uploadButton: { marginTop: "10px", padding: "8px 12px", borderRadius: "6px", border: "none", background: "#17a2b8", color: "white", cursor: "pointer" },
-  backLink: { display: "inline-block", marginTop: "20px", textDecoration: "none", color: "#0078d4", fontWeight: "bold" },
+  editButton: {
+    flex: 1,
+    background: "#0275d8",
+    color: "white",
+    border: "none",
+    borderRadius: "6px",
+    padding: "8px",
+  },
+  deleteButton: {
+    flex: 1,
+    background: "#d9534f",
+    color: "white",
+    border: "none",
+    borderRadius: "6px",
+    padding: "8px",
+  },
+  saveButton: {
+    flex: 1,
+    background: "#28a745",
+    color: "white",
+    border: "none",
+    borderRadius: "6px",
+    padding: "8px",
+  },
+  cancelButton: {
+    flex: 1,
+    background: "#6c757d",
+    color: "white",
+    border: "none",
+    borderRadius: "6px",
+    padding: "8px",
+  },
+  requestButton: {
+    background: "#007bff",
+    color: "white",
+    padding: "10px 20px",
+    borderRadius: "8px",
+    border: "none",
+    cursor: "pointer",
+    marginTop: "20px",
+  },
+  uploadButton: {
+    marginTop: "10px",
+    padding: "8px 12px",
+    borderRadius: "6px",
+    border: "none",
+    background: "#17a2b8",
+    color: "white",
+    cursor: "pointer",
+  },
+  toggleButton: {
+    color: "white",
+    border: "none",
+    borderRadius: "8px",
+    padding: "10px 16px",
+    marginTop: "10px",
+    fontWeight: "bold",
+  },
+  backLink: {
+    display: "inline-block",
+    marginTop: "20px",
+    textDecoration: "none",
+    color: "#0078d4",
+    fontWeight: "bold",
+  },
   loading: { textAlign: "center", marginTop: "50px" },
   error: { color: "red", textAlign: "center", marginTop: "50px" },
   transactionSection: { marginTop: "25px" },

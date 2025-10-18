@@ -9,7 +9,7 @@ from .serializers import RegisterSerializer, UserSerializer
 User = get_user_model()
 
 
-# 🧩 Εγγραφή νέου χρήστη
+# Εγγραφή νέου χρήστη
 class RegisterView(generics.CreateAPIView):
     queryset = User.objects.all()
     permission_classes = [permissions.AllowAny]
@@ -27,16 +27,22 @@ class RegisterView(generics.CreateAPIView):
         )
 
 
-# 👤 Επιστροφή στοιχείων τρέχοντος χρήστη (με JWT)
+# Επιστροφή στοιχείων τρέχοντος χρήστη (με JWT)
 class MeView(generics.RetrieveAPIView):
     serializer_class = UserSerializer
     permission_classes = [permissions.IsAuthenticated]
+
+    def get_serializer_context(self):
+       context = super().get_serializer_context()
+       context["request"] = self.request
+       return context
+
 
     def get_object(self):
         return self.request.user
 
 
-# 🌍 Προβολή προφίλ χρηστών (και ενημέρωση τοποθεσίας)
+# Προβολή προφίλ χρηστών (και ενημέρωση τοποθεσίας)
 class UserViewSet(viewsets.ReadOnlyModelViewSet):
     """
     Επιτρέπει:
@@ -44,11 +50,16 @@ class UserViewSet(viewsets.ReadOnlyModelViewSet):
       - GET /api/users/<id>/ → προφίλ χρήστη
       - POST /api/users/update_location/ → ενημέρωση τοποθεσίας (μόνο για τον εαυτό του)
     """
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        context["request"] = self.request
+        return context
+
     queryset = User.objects.all().order_by("id")
     serializer_class = UserSerializer
     permission_classes = [permissions.AllowAny]
 
-    # ➕ Προαιρετικό custom action για ενημέρωση τοποθεσίας
+    # Προαιρετικό custom action για ενημέρωση τοποθεσίας
     @action(detail=False, methods=["post"], permission_classes=[permissions.IsAuthenticated])
     def update_location(self, request):
         """
@@ -78,7 +89,7 @@ class UserViewSet(viewsets.ReadOnlyModelViewSet):
         )
 
 
-# 🖼️ Ανέβασμα / ενημέρωση φωτογραφίας προφίλ
+# Ανέβασμα / ενημέρωση φωτογραφίας προφίλ
 class UploadProfileImageView(generics.UpdateAPIView):
     """
     Endpoint: PATCH /api/upload-profile-image/
@@ -95,13 +106,18 @@ class UploadProfileImageView(generics.UpdateAPIView):
 
         user.profile_image = image
         user.save()
+
+        image_url = request.build_absolute_uri(user.profile_image.url)
+
         return Response(
-            {"detail": "Η φωτογραφία προφίλ ενημερώθηκε επιτυχώς!"},
+            {"detail": "Η φωτογραφία προφίλ ενημερώθηκε επιτυχώς!",
+             "profile_image": image_url,
+             },
             status=status.HTTP_200_OK
         )
 
 
-# 🔒 Αλλαγή κωδικού πρόσβασης
+# Αλλαγή κωδικού πρόσβασης
 class ChangePasswordView(generics.UpdateAPIView):
     """
     Endpoint: PUT /api/change-password/

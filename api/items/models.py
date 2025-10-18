@@ -12,7 +12,7 @@ class Item(models.Model):
         ('either', 'Ανταλλαγή ή Δανεισμός'),
     ]
 
-    # 🏷️ Κατηγορίες αντικειμένων
+    # Κατηγορίες αντικειμένων
     CATEGORY_CHOICES = [
         ('electronics', 'Ηλεκτρονικά'),
         ('books', 'Βιβλία'),
@@ -40,7 +40,7 @@ class Item(models.Model):
         verbose_name="Τύπος συναλλαγής"
     )
 
-    # 🔹 ΝΕΟ ΠΕΔΙΟ: Κατηγορία αντικειμένου
+    # ΝΕΟ ΠΕΔΙΟ: Κατηγορία αντικειμένου
     category = models.CharField(
         max_length=30,
         choices=CATEGORY_CHOICES,

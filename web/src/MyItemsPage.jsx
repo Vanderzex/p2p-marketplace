@@ -5,7 +5,7 @@ import toast from "react-hot-toast";
 
 export default function MyItemsPage() {
   const { user, token } = useAuth();
-  const { username } = useParams(); // 🆕 Αν υπάρχει στη διεύθυνση, βλέπουμε άλλον χρήστη
+  const { username } = useParams(); 
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -30,10 +30,10 @@ export default function MyItemsPage() {
 
         const data = await res.json();
 
-        // ✅ Εξασφαλίζουμε ότι έχουμε πάντα πίνακα αντικειμένων
+        // Εξασφαλίζουμε ότι έχουμε πάντα πίνακα αντικειμένων
         const results = Array.isArray(data) ? data : data.results || [];
 
-        // 🔍 Αν είναι δικό μας προφίλ → φιλτράρουμε, αλλιώς κρατάμε όλα
+        // Αν είναι δικό μας προφίλ → φιλτράρουμε, αλλιώς κρατάμε όλα
         const filtered = isOwnProfile
           ? results.filter(
               (item) =>

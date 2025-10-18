@@ -109,6 +109,19 @@ class Transaction(models.Model):
         default='none'
     )
 
+    owner_completed = models.BooleanField(default=False)
+    requester_completed = models.BooleanField(default=False)
+
+    meeting_address = models.CharField(max_length=255, blank=True, null=True)
+
+    owner_shipped = models.BooleanField(default=False)
+    requester_received = models.BooleanField(default=False)
+    owner_received = models.BooleanField(default=False)
+    requester_shipped = models.BooleanField(default=False)
+
+
+
+
     def clean(self):
         """Έλεγχοι εγκυρότητας ανάλογα με το είδος συναλλαγής"""
         # ----- ΔΑΝΕΙΣΜΟΣ -----
@@ -137,7 +150,7 @@ class Transaction(models.Model):
         verbose_name_plural = "Συναλλαγές"
         ordering = ['-created_at']
 
-    # ✅ Υπολογισμός απόστασης (με ασφάλεια)
+    # Υπολογισμός απόστασης (με ασφάλεια)
     @property
     def distance_km(self):
         """Υπολογίζει την απόσταση (km) μεταξύ owner και requester, αν έχουν τοποθεσία."""

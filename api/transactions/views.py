@@ -7,6 +7,7 @@ from .models import Transaction, Review
 from .serializers import TransactionSerializer, ReviewSerializer
 from items.models import Item
 from notifications.models import Notification
+import requests
 
 
 class TransactionViewSet(viewsets.ModelViewSet):
@@ -23,23 +24,38 @@ class TransactionViewSet(viewsets.ModelViewSet):
             Q(requester=user) | Q(owner=user)
         ).order_by('-created_at')
 
-        # 🔹 Προσθήκη query param ?type=incoming/outgoing/history
         filter_type = self.request.query_params.get('type')
 
+        # Εισερχόμενες (προς εμένα)
         if filter_type == 'incoming':
             queryset = queryset.filter(
-                owner=user
-            ).exclude(status__in=['completed', 'rejected'])
+                owner=user,
+                status__in=[
+                    'pending',
+                    'pending_confirmation',
+                    'pending_terms',
+                    'accepted',
+                    'returned_by_requester'
+                ]
+            )
 
+        # Εξερχόμενες (που έχω κάνει εγώ)
         elif filter_type == 'outgoing':
             queryset = queryset.filter(
-                requester=user
-            ).exclude(status__in=['completed', 'rejected'])
+                requester=user,
+                status__in=[
+                    'pending',
+                    'pending_confirmation',
+                    'pending_terms',
+                    'accepted',
+                    'returned_by_requester'
+                ]
+            )
 
+        # Ιστορικό (ολοκληρωμένες / απορριφθείσες / ακυρωμένες)
         elif filter_type == 'history':
             queryset = queryset.filter(
-                Q(owner=user) | Q(requester=user),
-                status__in=['completed', 'rejected']
+                status__in=['completed', 'rejected', 'cancelled']
             )
 
         return queryset.distinct()
@@ -68,7 +84,6 @@ class TransactionViewSet(viewsets.ModelViewSet):
         if transaction_type not in ['exchange', 'loan', 'either']:
             raise serializers.ValidationError({'error': 'Μη έγκυρος τύπος συναλλαγής.'})
 
-        # Έλεγχοι για ενεργές συναλλαγές
         existing_same_user = Transaction.objects.filter(
             requester=requester, item=item,
             status__in=['pending', 'accepted', 'pending_terms', 'pending_confirmation']
@@ -82,20 +97,17 @@ class TransactionViewSet(viewsets.ModelViewSet):
         if active_for_item:
             raise serializers.ValidationError({'error': 'Το αντικείμενο έχει ήδη ενεργή συναλλαγή.'})
 
-        # 🆕 Αντιγραφή τρόπου παράδοσης από το αντικείμενο
         delivery_method = getattr(item, 'delivery_method', None)
 
-        # Δημιουργία συναλλαγής
         transaction = serializer.save(
             requester=requester,
             owner=item.owner,
             item=item,
             transaction_type=transaction_type,
             terms=item.terms or "",
-            delivery_method=delivery_method  # 🆕 προστέθηκε
+            delivery_method=delivery_method
         )
 
-        # Ειδοποίηση στον ιδιοκτήτη
         Notification.objects.create(
             user=item.owner,
             sender=requester,
@@ -103,7 +115,7 @@ class TransactionViewSet(viewsets.ModelViewSet):
             message=f"📩 Ο χρήστης {requester.username} ζήτησε συναλλαγή για το '{item.title}'."
         )
 
-        # Πρόταση τοποθεσίας (in_person / pickup_point)
+    # Πρόταση τοποθεσίας (με όνομα περιοχής + ειδοποίηση)
     @action(detail=True, methods=['post'])
     def propose_location(self, request, pk=None):
         tx = self.get_object()
@@ -113,25 +125,40 @@ class TransactionViewSet(viewsets.ModelViewSet):
 
         lat = request.data.get("lat")
         lng = request.data.get("lng")
-
         if not lat or not lng:
             return Response({'error': 'Απαιτούνται συντεταγμένες (lat, lng).'}, status=status.HTTP_400_BAD_REQUEST)
 
-        tx.meeting_lat = lat
-        tx.meeting_lng = lng
+        tx.meeting_lat = float(lat)
+        tx.meeting_lng = float(lng)
         tx.meeting_status = "proposed"
+
+        # Προσπάθησε να αντλήσεις όνομα περιοχής (reverse geocoding)
+        location_name = None
+        try:
+            url = f"https://nominatim.openstreetmap.org/reverse?lat={lat}&lon={lng}&format=json&zoom=15&addressdetails=1"
+            headers = {"User-Agent": "p2p-marketplace/1.0"}
+            resp = requests.get(url, headers=headers, timeout=4)
+            if resp.status_code == 200:
+                data = resp.json()
+                location_name = data.get("display_name", None)
+                if location_name:
+                    tx.meeting_address = location_name
+        except Exception:
+            pass
+
         tx.save()
 
-        # Ειδοποίηση στον άλλο χρήστη
+        # Ειδοποίηση στον άλλο χρήστη με τη διεύθυνση
         other_user = tx.owner if request.user == tx.requester else tx.requester
+        location_text = f"📍 {location_name}" if location_name else f"📍 ({lat}, {lng})"
         Notification.objects.create(
             user=other_user,
             sender=request.user,
             transaction=tx,
-            message=f"📍 Ο χρήστης {request.user.username} πρότεινε σημείο συνάντησης."
+            message=f"Ο {request.user.username} πρότεινε σημείο συνάντησης στο {location_text}."
         )
 
-        return Response({'message': '✅ Η τοποθεσία προτάθηκε επιτυχώς.'})
+        return Response(TransactionSerializer(tx).data, status=status.HTTP_200_OK)
 
     # Ενημέρωση κατάστασης (Partial Update)
     def partial_update(self, request, *args, **kwargs):
@@ -163,7 +190,6 @@ class TransactionViewSet(viewsets.ModelViewSet):
             else:
                 instance.status = 'accepted'
 
-            # Ειδοποίηση στον αιτούντα
             Notification.objects.create(
                 user=instance.requester,
                 sender=user,
@@ -184,7 +210,7 @@ class TransactionViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(instance)
         return Response(serializer.data)
 
-    # Ο ιδιοκτήτης επιλέγει αντικείμενο για ανταλλαγή
+    # Επιλογή αντικειμένου ανταλλαγής
     @action(detail=True, methods=['post'])
     def select_exchange_item(self, request, pk=None):
         tx = self.get_object()
@@ -200,9 +226,15 @@ class TransactionViewSet(viewsets.ModelViewSet):
             return Response({'error': 'Πρέπει να επιλέξεις αντικείμενο του αιτούντος.'}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
-            selected_item = Item.objects.get(id=selected_item_id, owner=tx.requester)
+            selected_item = Item.objects.get(
+                id=selected_item_id,
+                owner=tx.requester,
+                available=True,
+                transaction_type__in=['exchange', 'either']
+            )
         except Item.DoesNotExist:
-            return Response({'error': 'Το αντικείμενο δεν βρέθηκε ή δεν ανήκει στον αιτούντα.'}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({'error': 'Το αντικείμενο δεν βρέθηκε ή δεν είναι διαθέσιμο για ανταλλαγή.'},
+                            status=status.HTTP_400_BAD_REQUEST)
 
         tx.requested_item = selected_item
         tx.status = 'pending_confirmation'
@@ -217,7 +249,7 @@ class TransactionViewSet(viewsets.ModelViewSet):
 
         return Response({'message': '✅ Επιλέχθηκε αντικείμενο για ανταλλαγή.'})
 
-    # Ο αιτών αποδέχεται την πρόταση ανταλλαγής
+    # Επιβεβαίωση ανταλλαγής
     @action(detail=True, methods=['post'])
     def confirm_exchange(self, request, pk=None):
         tx = self.get_object()
@@ -244,7 +276,7 @@ class TransactionViewSet(viewsets.ModelViewSet):
 
         return Response({'message': '✅ Η ανταλλαγή επιβεβαιώθηκε!'})
 
-    # Ο αιτών δηλώνει επιστροφή (loan)
+    # Δήλωση επιστροφής (loan)
     @action(detail=True, methods=['post'])
     def confirm_return(self, request, pk=None):
         tx = self.get_object()
@@ -268,38 +300,177 @@ class TransactionViewSet(viewsets.ModelViewSet):
 
         return Response({'message': '✅ Δήλωσες ότι επέστρεψες το αντικείμενο.'})
 
-    # Ολοκλήρωση συναλλαγής
+    # Επιβεβαίωση αποστολής (ισχύει για owner ή requester ανάλογα με τη συναλλαγή)
+    @action(detail=True, methods=['post'])
+    def mark_shipped(self, request, pk=None):
+        tx = self.get_object()
+        user = request.user
+
+        if tx.delivery_method != "shipping":
+            return Response(
+                {'error': 'Αυτός ο τύπος συναλλαγής δεν χρησιμοποιεί courier.'},
+                status=400
+            )
+
+        # Ανάλογα με το ρόλο του χρήστη
+        if user == tx.owner:
+            tx.owner_shipped = True
+        elif user == tx.requester:
+            tx.requester_shipped = True
+        else:
+            return Response(
+                {'error': 'Δεν συμμετέχεις σε αυτή τη συναλλαγή.'},
+                status=403
+            )
+
+        tx.save()
+
+        # Ειδοποίηση στον άλλο χρήστη
+        other = tx.requester if user == tx.owner else tx.owner
+        Notification.objects.create(
+            user=other,
+            sender=user,
+            transaction=tx,
+            message=f"📦 Ο {user.username} επιβεβαίωσε αποστολή για '{tx.item.title}'."
+        )
+
+        # Αν και οι δύο έχουν αποστείλει, ειδοποίησε και τους δύο
+        if tx.owner_shipped and tx.requester_shipped:
+            Notification.objects.create(
+                user=tx.owner,
+                sender=None,
+                transaction=tx,
+                message="📦 Και οι δύο πλευρές έχουν αποστείλει τα αντικείμενα. Μπορείτε να επιβεβαιώσετε παραλαβή!"
+            )
+            Notification.objects.create(
+                user=tx.requester,
+                sender=None,
+                transaction=tx,
+                message="📦 Και οι δύο πλευρές έχουν αποστείλει τα αντικείμενα. Μπορείτε να επιβεβαιώσετε παραλαβή!"
+            )
+
+        serializer = self.get_serializer(tx)
+        return Response(serializer.data, status=200)
+
+
+    # Επιβεβαίωση παραλαβής (ισχύει για owner ή requester)
+    @action(detail=True, methods=['post'])
+    def mark_received(self, request, pk=None):
+        tx = self.get_object()
+        user = request.user
+
+        if tx.delivery_method != "shipping":
+            return Response({'error': 'Αυτός ο τύπος συναλλαγής δεν χρησιμοποιεί courier.'}, status=400)
+
+        if user == tx.owner:
+            tx.owner_received = True
+        elif user == tx.requester:
+            tx.requester_received = True
+        else:
+            return Response({'error': 'Δεν συμμετέχεις σε αυτή τη συναλλαγή.'}, status=403)
+
+        # Αν και οι δύο έχουν παραλάβει → ολοκλήρωση
+        if tx.owner_received and tx.requester_received:
+            tx.status = "completed"
+            tx.returned_at = timezone.now()
+            if tx.transaction_type == "exchange" and tx.item and tx.requested_item:
+                old_owner_1, old_owner_2 = tx.item.owner, tx.requested_item.owner
+                tx.item.owner, tx.requested_item.owner = old_owner_2, old_owner_1
+                tx.item.available = True
+                tx.requested_item.available = True
+                tx.item.save()
+                tx.requested_item.save()
+            elif tx.transaction_type == "loan":
+                tx.item.available = True
+                tx.item.save()
+
+            for u in [tx.owner, tx.requester]:
+                Notification.objects.create(
+                    user=u,
+                    sender=user,
+                    transaction=tx,
+                    message=f"🏁 Η συναλλαγή '{tx.item.title}' ολοκληρώθηκε επιτυχώς μέσω courier!"
+                )
+
+        tx.save()
+        serializer = self.get_serializer(tx)
+        return Response(serializer.data, status=200)
+
+    # Διπλή Ολοκλήρωση + επιβεβαίωση επιστροφής
     @action(detail=True, methods=['post'])
     def mark_completed(self, request, pk=None):
         tx = self.get_object()
         user = request.user
 
-        if tx.owner != user:
-            return Response({'error': 'Μόνο ο ιδιοκτήτης μπορεί να ολοκληρώσει.'}, status=status.HTTP_403_FORBIDDEN)
-        if tx.status not in ['accepted', 'returned_by_requester']:
-            return Response({'error': 'Δεν υπάρχει ενεργή συναλλαγή προς ολοκλήρωση.'}, status=status.HTTP_400_BAD_REQUEST)
+        # Αν πρόκειται για δανεισμό και ο αιτών έχει δηλώσει επιστροφή → ο owner ολοκληρώνει
+        if tx.transaction_type == 'loan' and tx.status == 'returned_by_requester' and user == tx.owner:
+            tx.status = 'completed'
+            tx.returned_at = timezone.now()
+            if tx.item:
+                tx.item.available = True
+                tx.item.save()
 
-        if tx.transaction_type == 'exchange':
-            if tx.item: tx.item.available = True; tx.item.save()
-            if tx.requested_item: tx.requested_item.available = True; tx.requested_item.save()
-        elif tx.transaction_type == 'loan':
-            tx.item.available = True; tx.item.save()
-
-        tx.status = 'completed'
-        tx.returned_at = timezone.now()
-        tx.save()
-
-        for u in [tx.requester, tx.owner]:
             Notification.objects.create(
-                user=u,
+                user=tx.requester,
                 sender=user,
                 transaction=tx,
-                message=f"🏁 Η συναλλαγή '{tx.item.title}' ολοκληρώθηκε επιτυχώς!"
+                message=f"✅ Ο {user.username} επιβεβαίωσε την επιστροφή του '{tx.item.title}'. Η συναλλαγή ολοκληρώθηκε!"
+            )
+            Notification.objects.create(
+                user=tx.owner,
+                sender=user,
+                transaction=tx,
+                message=f"🏁 Ολοκληρώθηκε επιτυχώς ο δανεισμός για '{tx.item.title}'."
+            )
+            tx.save()
+            return Response(TransactionSerializer(tx).data)
+
+        # Κανονική διπλή ολοκλήρωση
+        if user == tx.owner:
+            tx.owner_completed = True
+        elif user == tx.requester:
+            tx.requester_completed = True
+        else:
+            return Response({'error': 'Δεν συμμετέχεις σε αυτή τη συναλλαγή.'},
+                            status=status.HTTP_403_FORBIDDEN)
+
+        if tx.owner_completed and tx.requester_completed:
+            tx.status = 'completed'
+            tx.returned_at = timezone.now()
+
+            if tx.transaction_type == 'exchange' and tx.item and tx.requested_item:
+                old_owner_1 = tx.item.owner
+                old_owner_2 = tx.requested_item.owner
+                tx.item.owner = old_owner_2
+                tx.requested_item.owner = old_owner_1
+                tx.item.available = True
+                tx.requested_item.available = True
+                tx.item.save()
+                tx.requested_item.save()
+            elif tx.transaction_type == 'loan' and tx.item:
+                tx.item.available = True
+                tx.item.save()
+
+            for u in [tx.owner, tx.requester]:
+                Notification.objects.create(
+                    user=u,
+                    sender=user,
+                    transaction=tx,
+                    message=f"🏁 Η συναλλαγή '{tx.item.title}' ολοκληρώθηκε επιτυχώς!"
+                )
+        else:
+            other_user = tx.owner if user == tx.requester else tx.requester
+            Notification.objects.create(
+                user=other_user,
+                sender=user,
+                transaction=tx,
+                message=f"🕒 Ο {user.username} δήλωσε ότι ολοκλήρωσε τη συναλλαγή για '{tx.item.title}'."
             )
 
-        return Response({'message': '✅ Η συναλλαγή ολοκληρώθηκε.'})
+        tx.save()
+        return Response(TransactionSerializer(tx).data)
 
-    # Προβολή συναλλαγών άλλου χρήστη (προφίλ)
+    # Προβολή συναλλαγών άλλου χρήστη
     @action(detail=False, methods=['get'], url_path='of_user/(?P<username>[\w.@+-]+)')
     def of_user(self, request, username=None):
         from django.contrib.auth import get_user_model
@@ -309,9 +480,7 @@ class TransactionViewSet(viewsets.ModelViewSet):
         except User.DoesNotExist:
             return Response({'error': 'Ο χρήστης δεν βρέθηκε.'}, status=status.HTTP_404_NOT_FOUND)
 
-        txs = Transaction.objects.filter(
-            Q(requester=user) | Q(owner=user)
-        ).order_by('-created_at')
+        txs = Transaction.objects.filter(Q(requester=user) | Q(owner=user)).order_by('-created_at')
         return Response(self.get_serializer(txs, many=True).data)
 
 
@@ -333,25 +502,13 @@ class ReviewViewSet(viewsets.ModelViewSet):
         if reviewer not in [tx.requester, tx.owner]:
             raise serializers.ValidationError({"error": "Δεν συμμετέχεις σε αυτή τη συναλλαγή."})
         if tx.status != 'completed':
-            raise serializers.ValidationError({"error": "Η συναλλαγή δεν έχει ολοκληρωθεί."})
-        if Review.objects.filter(transaction=tx, reviewer=reviewer).exists():
-            raise serializers.ValidationError({"error": "Έχεις ήδη αξιολογήσει."})
+            raise serializers.ValidationError({"error": "Η συναλλαγή δεν έχει ολοκληρωθεί ακόμα."})
 
         reviewed_user = tx.owner if reviewer == tx.requester else tx.requester
-        review = serializer.save(reviewer=reviewer, reviewed_user=reviewed_user)
+        serializer.save(reviewer=reviewer, reviewed_user=reviewed_user)
 
-        reviewed_user.update_average_rating()
-        reviewed_user.update_total_completed_transactions()
-
-        # Ειδοποίηση στον χρήστη που αξιολογήθηκε
-        Notification.objects.create(
-            user=reviewed_user,
-            sender=reviewer,
-            transaction=tx,
-            message=f"⭐ Ο {reviewer.username} σε αξιολόγησε ({review.rating}/5)."
-        )
-
-    @action(detail=False, methods=['get'], url_path='of_user/(?P<user_id>[^/.]+)')
+    @action(detail=False, methods=["get"], url_path=r"of_user/(?P<user_id>\d+)")
     def of_user(self, request, user_id=None):
-        reviews = Review.objects.filter(reviewed_user_id=user_id).order_by('-created_at')[:5]
-        return Response(self.get_serializer(reviews, many=True).data)
+        reviews = Review.objects.filter(reviewed_user__id=user_id).order_by('-created_at')
+        serializer = self.get_serializer(reviews, many=True)
+        return Response(serializer.data)

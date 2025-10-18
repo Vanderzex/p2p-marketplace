@@ -10,7 +10,7 @@ class ItemFilter(filters.FilterSet):
     created_after = filters.DateFilter(field_name="created_at", lookup_expr="gte")
     created_before = filters.DateFilter(field_name="created_at", lookup_expr="lte")
 
-    # ✅ νέα "ψεύτικα" πεδία για να μην κόβει ο DjangoFilter τα params
+    #νέα "ψεύτικα" πεδία για να μην κόβει ο DjangoFilter τα params
     lat = filters.NumberFilter(method="noop_filter")
     lon = filters.NumberFilter(method="noop_filter")
     max_distance = filters.NumberFilter(method="noop_filter")

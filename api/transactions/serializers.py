@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from .models import Transaction, Review
-from users.serializers import UserSerializer  # ✅ για nested owner/requester
+from users.serializers import UserSerializer
 from items.serializers import ItemSerializer
 
 
@@ -54,10 +54,15 @@ class TransactionSerializer(serializers.ModelSerializer):
     # Nested reviews
     reviews = ReviewSerializer(many=True, read_only=True)
 
-    # 🧭 Νέο πεδίο: απόσταση μεταξύ owner και requester (από το model @property)
+    # Απόσταση μεταξύ owner και requester (υπολογίζεται από το model)
     distance_km = serializers.ReadOnlyField()
-    def get_distance_km(self, obj):
-        return obj.distance_km  # υπολογίζεται από το @property
+
+    # Flags για courier + meeting info
+    owner_shipped = serializers.BooleanField(read_only=True)
+    requester_received = serializers.BooleanField(read_only=True)
+    meeting_lat = serializers.FloatField(read_only=True)
+    meeting_lng = serializers.FloatField(read_only=True)
+    meeting_address = serializers.CharField(read_only=True)
 
     class Meta:
         model = Transaction
@@ -79,11 +84,20 @@ class TransactionSerializer(serializers.ModelSerializer):
             # helper fields
             'item_title',
             'requested_item_title',
+            # courier flags
+            'delivery_method',
+            'owner_shipped',
+            'owner_received',
+            'requester_shipped',
+            'requester_received',
+            # τοποθεσία
+            'meeting_lat',
+            'meeting_lng',
+            'meeting_address',
             # reviews
             'reviews',
-            # νέο field
+            # απόσταση
             'distance_km',
-            'delivery_method',
         ]
         read_only_fields = [
             'id',
@@ -92,6 +106,12 @@ class TransactionSerializer(serializers.ModelSerializer):
             'status',
             'created_at',
             'returned_at',
+            'owner_shipped',
+            'requester_received',
+            'meeting_lat',
+            'meeting_lng',
+            'meeting_address',
+            'distance_km',
         ]
 
     # -------------------- Validation -------------------- #
@@ -107,7 +127,6 @@ class TransactionSerializer(serializers.ModelSerializer):
         # --- Έλεγχος τύπου αντικειμένου ---
         if item and requested_type:
             item_type = item.transaction_type
-
             if item_type != 'either' and item_type != requested_type:
                 raise serializers.ValidationError({
                     "transaction_type": f"Το αντικείμενο '{item.title}' δεν υποστηρίζει '{requested_type}' συναλλαγή (επιτρέπεται μόνο '{item_type}')."
@@ -140,9 +159,5 @@ class TransactionSerializer(serializers.ModelSerializer):
             data['end_date'] = None
             data['terms'] = None
             data['borrower_accepted_terms'] = False
-
-        # --- Either (χωρίς περιορισμό) ---
-        elif requested_type == 'either':
-            pass
 
         return data

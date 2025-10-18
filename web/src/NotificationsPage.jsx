@@ -10,7 +10,7 @@ export default function NotificationsPage() {
   const [totalCount, setTotalCount] = useState(0);
   const [pageSize, setPageSize] = useState(10);
 
-  // 📡 Ανάκτηση ειδοποιήσεων με αριθμό σελίδας
+  // Ανάκτηση ειδοποιήσεων με αριθμό σελίδας
   const fetchNotifications = async (page = 1) => {
     if (!token) return;
     setLoading(true);
@@ -48,7 +48,7 @@ export default function NotificationsPage() {
 
   const totalPages = Math.ceil(totalCount / pageSize);
 
-  // 📬 Μαρκάρισμα όλων ως διαβασμένων
+  // Μαρκάρισμα όλων ως διαβασμένων
   const markAllAsRead = async () => {
     try {
       await fetch("http://localhost:8000/api/notifications/mark_all_read/", {
@@ -62,7 +62,7 @@ export default function NotificationsPage() {
     }
   };
 
-  // 🔢 Δημιουργία λίστας αριθμών σελίδων (GitHub style)
+  // Δημιουργία λίστας αριθμών σελίδων (GitHub style)
   const renderPageNumbers = () => {
     const pages = [];
     const maxVisible = 5; // Πόσες να φαίνονται
@@ -152,7 +152,7 @@ export default function NotificationsPage() {
         </ul>
       )}
 
-      {/* 🔹 Pagination controls */}
+      {/* Pagination controls */}
       {totalPages > 1 && (
         <div style={styles.pagination}>
           <button

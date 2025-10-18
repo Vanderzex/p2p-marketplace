@@ -37,6 +37,10 @@ export default function MyTransactionsPage() {
   const [exchangeModalOpen, setExchangeModalOpen] = useState(false);
   const [exchangeModalTx, setExchangeModalTx] = useState(null);
 
+  const [showMeetingLocationIds, setShowMeetingLocationIds] = useState(
+    new Set()
+  );
+
   // Loan accept inline inputs (ανά συναλλαγή)
   const [loanDates, setLoanDates] = useState({}); // { [txId]: { start_date, end_date } }
 
@@ -49,6 +53,8 @@ export default function MyTransactionsPage() {
 
   const [showMapModal, setShowMapModal] = useState(false);
   const [selectedTxForMap, setSelectedTxForMap] = useState(null);
+
+  const [localCompleted, setLocalCompleted] = useState(new Set());
 
   // Handler: όταν ο χρήστης επιλέξει θέση στον χάρτη
   const handleLocationSelect = async (lat, lng) => {
@@ -67,6 +73,36 @@ export default function MyTransactionsPage() {
       setSelectedTxForMap(null);
     } catch (err) {
       toast.error("⚠️ Σφάλμα αποστολής τοποθεσίας");
+    }
+  };
+
+  // Owner: Επιβεβαίωση αποστολής (courier)
+  const handleMarkShipped = async (txId) => {
+    try {
+      const res = await authFetch(
+        `http://localhost:8000/api/transactions/${txId}/mark_shipped/`,
+        { method: "POST" }
+      );
+      if (!res.ok) throw new Error();
+      toast.success("📦 Επιβεβαιώθηκε η αποστολή!");
+      fetchTransactions();
+    } catch {
+      toast.error("⚠️ Σφάλμα κατά την επιβεβαίωση αποστολής");
+    }
+  };
+
+  // Requester: Επιβεβαίωση παραλαβής (courier)
+  const handleMarkReceived = async (txId) => {
+    try {
+      const res = await authFetch(
+        `http://localhost:8000/api/transactions/${txId}/mark_received/`,
+        { method: "POST" }
+      );
+      if (!res.ok) throw new Error();
+      toast.success("📦 Επιβεβαιώθηκε η παραλαβή!");
+      fetchTransactions();
+    } catch {
+      toast.error("⚠️ Σφάλμα κατά την επιβεβαίωση παραλαβής");
     }
   };
 
@@ -91,7 +127,7 @@ export default function MyTransactionsPage() {
       if (!res.ok) throw new Error("Σφάλμα φόρτωσης συναλλαγών");
       const data = await res.json();
 
-      // 📄 Ανταπόκριση pagination (DRF)
+      // Ανταπόκριση pagination (DRF)
       setTransactions(Array.isArray(data) ? data : data.results || []);
       setNextPage(data.next || null);
       setPrevPage(data.previous || null);
@@ -149,7 +185,7 @@ export default function MyTransactionsPage() {
     if (!username || itemsByUser[username]) return;
     try {
       const res = await authFetch(
-        `http://localhost:8000/api/items/of_user/${username}/`
+        `http://localhost:8000/api/items/of_user/${username}/?mode=exchange`
       );
       if (!res.ok) throw new Error();
       const data = await res.json();
@@ -167,13 +203,18 @@ export default function MyTransactionsPage() {
       const body = { status: "accepted" };
 
       if (tx.transaction_type === "loan") {
+        // Πάρε ημερομηνίες από το state ή από το ίδιο το αντικείμενο
         const dates = loanDates[tx.id] || {};
-        if (!dates.start_date || !dates.end_date) {
+        const start = dates.start_date || tx.start_date;
+        const end = dates.end_date || tx.end_date;
+
+        if (!start || !end) {
           toast.error("🔔 Συμπλήρωσε ημερομηνίες δανεισμού");
           return;
         }
-        body.start_date = dates.start_date;
-        body.end_date = dates.end_date;
+
+        body.start_date = start;
+        body.end_date = end;
       }
 
       const res = await authFetch(
@@ -283,6 +324,9 @@ export default function MyTransactionsPage() {
 
   // Owner: Ολοκλήρωση συναλλαγής
   const handleComplete = async (txId) => {
+    // Προσθήκη τοπικού flag για να κρυφτεί αμέσως το κουμπί
+    setLocalCompleted((prev) => new Set([...prev, txId]));
+
     try {
       const res = await authFetch(
         `http://localhost:8000/api/transactions/${txId}/mark_completed/`,
@@ -293,6 +337,12 @@ export default function MyTransactionsPage() {
       fetchTransactions();
     } catch {
       toast.error("⚠️ Σφάλμα ολοκλήρωσης");
+      // Αν αποτύχει, επαναφέρουμε το flag
+      setLocalCompleted((prev) => {
+        const copy = new Set(prev);
+        copy.delete(txId);
+        return copy;
+      });
     }
   };
 
@@ -396,6 +446,11 @@ export default function MyTransactionsPage() {
                     setExpandedId={setExpandedId}
                     setSelectedTxForMap={setSelectedTxForMap}
                     setShowMapModal={setShowMapModal}
+                    localCompleted={localCompleted}
+                    onMarkShipped={() => handleMarkShipped(tx.id)}
+                    onMarkReceived={() => handleMarkReceived(tx.id)}
+                    showMeetingLocationIds={showMeetingLocationIds} 
+                    setShowMeetingLocationIds={setShowMeetingLocationIds} 
                   />
                 ))
               )}
@@ -409,25 +464,24 @@ export default function MyTransactionsPage() {
                 <p>Δεν υπάρχουν εξερχόμενα αιτήματα.</p>
               ) : (
                 transactions.map((tx) => (
-                  <TransactionCard
+                  <OutgoingCard
                     key={tx.id}
                     tx={tx}
                     user={user}
-                    itemsByUser={itemsByUser}
                     setActiveChat={setActiveChat}
-                    onAccept={() => handleConfirmExchange(tx.id)}
-                    onReject={() => handleRejectExchange(tx.id)}
-                    onOpenSelect={() => openSelectItemModal(tx)}
-                    onComplete={() => handleReturnLoan(tx.id)}
-                    loanDates={loanDates[tx.id] || {}}
-                    setLoanDates={(dates) =>
-                      setLoanDates((prev) => ({ ...prev, [tx.id]: dates }))
-                    }
+                    onConfirmExchange={() => handleConfirmExchange(tx.id)}
+                    onRejectExchange={() => handleRejectExchange(tx.id)}
+                    onReturnLoan={() => handleReturnLoan(tx.id)}
+                    onComplete={() => handleComplete(tx.id)}
                     expandedId={expandedId}
                     setExpandedId={setExpandedId}
+                    localCompleted={localCompleted}
                     setSelectedTxForMap={setSelectedTxForMap}
                     setShowMapModal={setShowMapModal}
-                    mode="outgoing"
+                    onMarkReceived={() => handleMarkReceived(tx.id)}
+                    onMarkShipped={() => handleMarkShipped(tx.id)}
+                    showMeetingLocationIds={showMeetingLocationIds} 
+                    setShowMeetingLocationIds={setShowMeetingLocationIds} 
                   />
                 ))
               )}
@@ -471,7 +525,7 @@ export default function MyTransactionsPage() {
                     <strong>Προς:</strong> {tx.owner?.username}
                   </p>
 
-                  {/* 📍 Απόσταση μεταξύ χρηστών */}
+                  {/* Απόσταση μεταξύ χρηστών */}
                   {tx.distance_km !== null && tx.distance_km !== undefined ? (
                     <p style={{ color: "#555", marginTop: "4px" }}>
                       📍 Απόσταση μεταξύ χρηστών:{" "}
@@ -522,7 +576,7 @@ export default function MyTransactionsPage() {
                 </div>
               ))}
 
-              {/* 🧭 Σελιδοποίηση */}
+              {/* Σελιδοποίηση */}
               <PaginationControls
                 nextPage={nextPage}
                 prevPage={prevPage}
@@ -687,12 +741,37 @@ export default function MyTransactionsPage() {
           </motion.div>
         )}
       </AnimatePresence>
-      {/* 🗺️ Modal για επιλογή τοποθεσίας */}
-      {showMapModal && (
+      {/* Modal για επιλογή τοποθεσίας */}
+      {showMapModal && selectedTxForMap && (
         <div style={styles.modalOverlay}>
           <div style={styles.modalContent}>
-            <h3>📍 Επίλεξε τοποθεσία συνάντησης</h3>
-            <MapSelector onSelectLocation={handleLocationSelect} />
+            <h3>📍 Τοποθεσία συνάντησης</h3>
+
+            <MapSelector
+              tx={selectedTxForMap}
+              onSelectLocation={async (lat, lng) => {
+                try {
+                  const res = await authFetch(
+                    `http://localhost:8000/api/transactions/${selectedTxForMap.id}/propose_location/`,
+                    {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ lat, lng }),
+                    }
+                  );
+                  if (!res.ok) throw new Error();
+                  const updated = await res.json();
+                  toast.success(
+                    "✅ Η τοποθεσία αποθηκεύτηκε και στάλθηκε ειδοποίηση!"
+                  );
+                  setSelectedTxForMap(updated); // ενημέρωσε local state
+                  fetchTransactions(); // ανανέωσε λίστα
+                } catch {
+                  toast.error("⚠️ Σφάλμα αποθήκευσης τοποθεσίας");
+                }
+              }}
+            />
+
             <button
               style={styles.closeChatButton}
               onClick={() => setShowMapModal(false)}
@@ -723,14 +802,14 @@ function TransactionCard({
   setExpandedId,
   setSelectedTxForMap,
   setShowMapModal,
-  mode = "incoming", // "incoming" ή "outgoing"
+  localCompleted,
+  onMarkShipped,
+  onMarkReceived,
+  showMeetingLocationIds,
+  setShowMeetingLocationIds,
 }) {
-  const isExpanded = expandedId === tx.id;
   const isOwner = tx.owner?.username === user?.username;
-  const isRequester = tx.requester?.username === user?.username;
-
-  // Καθορίζει ποιος είναι ο "άλλος" χρήστης
-  const otherUser = mode === "incoming" ? tx.requester : tx.owner;
+  const isExpanded = expandedId === tx.id;
 
   return (
     <div
@@ -738,17 +817,15 @@ function TransactionCard({
         ...styles.card,
         cursor: "pointer",
         background: isExpanded ? "#eef7ff" : "#f9f9f9",
-        transition: "0.2s",
       }}
       onClick={() => setExpandedId(isExpanded ? null : tx.id)}
     >
-      {/* --- Compact View (όταν δεν είναι expanded) --- */}
       {!isExpanded && (
         <div>
           <p>
             👤{" "}
-            <Link to={`/profile/${otherUser?.id}`} style={styles.link}>
-              {otherUser?.username}
+            <Link to={`/profile/${tx.requester?.id}`} style={styles.link}>
+              {tx.requester?.username}
             </Link>
           </p>
           <p>
@@ -757,32 +834,107 @@ function TransactionCard({
         </div>
       )}
 
-      {/* --- Expanded View --- */}
       {isExpanded && (
         <div>
           <p>
-            <strong>{mode === "incoming" ? "Από:" : "Προς:"}</strong>{" "}
-            <Link to={`/profile/${otherUser?.id}`} style={styles.link}>
-              {otherUser?.username}
+            <strong>Από:</strong>{" "}
+            <Link to={`/profile/${tx.requester?.id}`} style={styles.link}>
+              {tx.requester?.username}
             </Link>
           </p>
-
           <p>
             <strong>Αντικείμενο:</strong>{" "}
             <Link to={`/items/${tx.item}`} style={styles.link}>
               {tx.item_title}
             </Link>
           </p>
-
           <p>
             <strong>Τύπος:</strong> {renderType(tx.transaction_type)}
           </p>
-
           <p>
             <strong>Κατάσταση:</strong> {renderStatus(tx.status)}
           </p>
 
-          {/* 🆕 Τρόπος παράδοσης */}
+          {tx.transaction_type === "exchange" && tx.requested_item_title && (
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "10px",
+                background: "#f0f8ff",
+                borderRadius: "8px",
+                padding: "8px 10px",
+                marginTop: "8px",
+              }}
+            >
+              <div style={{ flex: 1, textAlign: "center" }}>
+                <p style={{ margin: 0 }}>
+                  🎁 <strong>{tx.item_title}</strong>
+                </p>
+                <p style={{ margin: 0, fontSize: "0.9em", color: "#555" }}>
+                  του {tx.owner?.username}
+                </p>
+              </div>
+
+              <span style={{ fontSize: "1.4em" }}>⇄</span>
+
+              <div style={{ flex: 1, textAlign: "center" }}>
+                <p style={{ margin: 0 }}>
+                  🎁 <strong>{tx.requested_item_title}</strong>
+                </p>
+                <p style={{ margin: 0, fontSize: "0.9em", color: "#555" }}>
+                  του {tx.requester?.username}
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* Τοποθεσία συνάντησης */}
+          {(tx.meeting_lat && tx.meeting_lng) || tx.meeting_address ? (
+            <>
+              <button
+                style={styles.mapButton}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setShowMeetingLocationIds((prev) => {
+                    const newSet = new Set(prev);
+                    if (newSet.has(tx.id)) newSet.delete(tx.id);
+                    else newSet.add(tx.id);
+                    return newSet;
+                  });
+                }}
+              >
+                {showMeetingLocationIds.has(tx.id)
+                  ? "❌ Απόκρυψη τοποθεσίας"
+                  : "📍 Εμφάνιση τοποθεσίας συνάντησης"}
+              </button>
+
+              {showMeetingLocationIds.has(tx.id) && (
+                <div style={{ marginTop: "10px" }}>
+                  <p style={{ color: "#007bff", marginBottom: "8px" }}>
+                    📍 <strong>Τοποθεσία συνάντησης:</strong>{" "}
+                    {tx.meeting_address
+                      ? tx.meeting_address
+                      : `(${tx.meeting_lat.toFixed(
+                          5
+                        )}, ${tx.meeting_lng.toFixed(5)})`}
+                  </p>
+
+                  <div
+                    style={{
+                      border: "1px solid #ccc",
+                      borderRadius: "8px",
+                      overflow: "hidden",
+                      height: "260px",
+                    }}
+                  >
+                    <MapSelector tx={tx} onSelectLocation={() => {}} />
+                  </div>
+                </div>
+              )}
+            </>
+          ) : null}
+
           {tx.delivery_method && (
             <p>
               <strong>Τρόπος Παράδοσης:</strong>{" "}
@@ -796,7 +948,7 @@ function TransactionCard({
             </p>
           )}
 
-          {/* 🗺️ Κουμπί επιλογής τοποθεσίας (μόνο αν σχετικό) */}
+          {/* Κουμπί επιλογής τοποθεσίας — ορατό και στους δύο */}
           {(tx.delivery_method === "in_person" ||
             tx.delivery_method === "pickup_point") && (
             <button
@@ -811,108 +963,198 @@ function TransactionCard({
             </button>
           )}
 
-          {/* 📍 Απόσταση */}
-          {tx.distance_km !== null && tx.distance_km !== undefined ? (
+          {tx.distance_km !== null && (
             <p style={{ color: "#555" }}>
               📍 Απόσταση:{" "}
               <strong style={{ color: "#007bff" }}>{tx.distance_km} km</strong>
             </p>
-          ) : (
-            <p style={{ color: "#999" }}>
-              📍 Απόσταση: <em>—</em>
-            </p>
           )}
 
-          {/* 💬 Κουμπί συνομιλίας */}
           <button
             style={styles.chatButton}
             onClick={(e) => {
               e.stopPropagation();
-              const receiverId =
-                tx.owner?.id === user?.id ? tx.requester?.id : tx.owner?.id;
-              setActiveChat({ transactionId: tx.id, receiverId });
+              setActiveChat({
+                transactionId: tx.id,
+                receiverId: tx.requester?.id,
+              });
             }}
           >
             💬 Συνομιλία
           </button>
 
-          {/* --- Δράσεις ανά ρόλο --- */}
-          <div
-            style={{
-              marginTop: 10,
-              display: "flex",
-              gap: 8,
-              flexWrap: "wrap",
-            }}
-          >
-            {/* OWNER ACTIONS */}
-            {isOwner && tx.status === "pending" && (
-              <>
-                {tx.transaction_type === "loan" && (
-                  <div style={styles.inlineRow}>
-                    <input
-                      type="date"
-                      value={loanDates.start_date || ""}
-                      onChange={(e) =>
-                        setLoanDates({
-                          ...loanDates,
-                          start_date: e.target.value,
-                        })
+          {isOwner && (
+            <div
+              style={{
+                marginTop: 10,
+                display: "flex",
+                gap: 8,
+                flexWrap: "wrap",
+              }}
+            >
+              {/* Αποδοχή/Απόρριψη */}
+              {tx.status === "pending" && (
+                <>
+                  {tx.transaction_type === "loan" &&
+                    tx.start_date &&
+                    tx.end_date && (
+                      <p>
+                        <strong>Ημερ. Δανεισμού:</strong>{" "}
+                        {new Date(tx.start_date).toLocaleDateString("el-GR")} –{" "}
+                        {new Date(tx.end_date).toLocaleDateString("el-GR")}
+                      </p>
+                    )}
+
+                  <button
+                    style={{
+                      ...styles.primaryBtn,
+                      background:
+                        tx.transaction_type === "exchange" && !tx.requested_item
+                          ? "#ccc"
+                          : styles.primaryBtn.background,
+                      cursor:
+                        tx.transaction_type === "exchange" && !tx.requested_item
+                          ? "not-allowed"
+                          : "pointer",
+                    }}
+                    disabled={
+                      tx.transaction_type === "exchange" && !tx.requested_item
+                    }
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (
+                        tx.transaction_type === "exchange" &&
+                        !tx.requested_item
+                      ) {
+                        toast.error(
+                          "🎁 Επίλεξε πρώτα αντικείμενο για ανταλλαγή!"
+                        );
+                        return;
                       }
-                      style={styles.dateInput}
-                    />
-                    <input
-                      type="date"
-                      value={loanDates.end_date || ""}
-                      onChange={(e) =>
-                        setLoanDates({
-                          ...loanDates,
-                          end_date: e.target.value,
-                        })
-                      }
-                      style={styles.dateInput}
-                    />
+                      onAccept();
+                    }}
+                  >
+                    ✅ Αποδοχή
+                  </button>
+
+                  <button
+                    style={styles.dangerBtn}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onReject();
+                    }}
+                  >
+                    ❌ Απόρριψη
+                  </button>
+
+                  {tx.transaction_type === "exchange" && (
+                    <button
+                      style={styles.secondaryBtn}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onOpenSelect();
+                      }}
+                    >
+                      🎁 Επιλογή αντικειμένου
+                    </button>
+                  )}
+                </>
+              )}
+
+              {/* Courier flow για loan */}
+              {tx.delivery_method === "shipping" &&
+                tx.transaction_type === "loan" &&
+                tx.status === "accepted" && (
+                  <div style={{ marginTop: "10px" }}>
+                    {!tx.owner_shipped ? (
+                      <button
+                        style={styles.primaryBtn}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onMarkShipped(tx.id);
+                        }}
+                      >
+                        📦 Επιβεβαίωση αποστολής
+                      </button>
+                    ) : (
+                      <p style={{ color: "#28a745" }}>
+                        ✅ Έχεις επιβεβαιώσει αποστολή
+                      </p>
+                    )}
                   </div>
                 )}
 
-                <button
-                  style={styles.primaryBtn}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onAccept();
-                  }}
-                >
-                  ✅ Αποδοχή
-                </button>
+              {tx.delivery_method === "shipping" &&
+                tx.transaction_type === "exchange" &&
+                tx.status === "accepted" && (
+                  <div style={{ marginTop: "10px" }}>
+                    {!tx.owner_shipped ? (
+                      <button
+                        style={styles.primaryBtn}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onMarkShipped(tx.id);
+                        }}
+                      >
+                        📦 Επιβεβαίωση αποστολής
+                      </button>
+                    ) : (
+                      <p style={{ color: "#28a745" }}>
+                        ✅ Έχεις επιβεβαιώσει αποστολή
+                      </p>
+                    )}
 
-                <button
-                  style={styles.dangerBtn}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onReject();
-                  }}
-                >
-                  ❌ Απόρριψη
-                </button>
+                    {tx.requester_shipped && !tx.owner_received && (
+                      <button
+                        style={styles.secondaryBtn}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onMarkReceived(tx.id);
+                        }}
+                      >
+                        📦 Επιβεβαίωση παραλαβής
+                      </button>
+                    )}
 
-                {tx.transaction_type === "exchange" && (
-                  <button
-                    style={styles.secondaryBtn}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onOpenSelect();
-                    }}
-                  >
-                    🎁 Επιλογή αντικειμένου
-                  </button>
+                    {tx.owner_received && (
+                      <p style={{ color: "#28a745" }}>
+                        ✅ Έχεις επιβεβαιώσει παραλαβή
+                      </p>
+                    )}
+
+                    {tx.owner_received && tx.requester_received && (
+                      <p style={{ color: "#28a745" }}>
+                        🏁 Η ανταλλαγή ολοκληρώθηκε!
+                      </p>
+                    )}
+                  </div>
                 )}
-              </>
-            )}
 
-            {/* OWNER – ολοκλήρωση */}
-            {isOwner &&
-              (tx.status === "accepted" ||
-                tx.status === "returned_by_requester") && (
+              {/* Χέρι με χέρι ανταλλαγή – Ολοκλήρωση */}
+              {tx.transaction_type === "exchange" &&
+                tx.delivery_method === "in_person" &&
+                tx.status === "accepted" && (
+                  <div style={{ marginTop: "10px" }}>
+                    {!localCompleted.has(tx.id) ? (
+                      <button
+                        style={styles.primaryBtn}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onComplete();
+                        }}
+                      >
+                        🏁 Ολοκλήρωση ανταλλαγής
+                      </button>
+                    ) : (
+                      <p style={{ color: "#999" }}>
+                        🕒 Αναμονή ολοκλήρωσης από τον άλλο χρήστη
+                      </p>
+                    )}
+                  </div>
+                )}
+
+              {/* Επιστροφή */}
+              {tx.status === "returned_by_requester" && (
                 <button
                   style={styles.primaryBtn}
                   onClick={(e) => {
@@ -920,14 +1162,217 @@ function TransactionCard({
                     onComplete();
                   }}
                 >
-                  🏁 Ολοκλήρωση
+                  🏁 Επιβεβαίωση & Ολοκλήρωση
                 </button>
               )}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 
-            {/* REQUESTER ACTIONS */}
-            {isRequester && (
-              <>
-                {/* Ανταλλαγή: Pending confirmation */}
+function OutgoingCard({
+  tx,
+  user,
+  setActiveChat,
+  onConfirmExchange,
+  onRejectExchange,
+  onReturnLoan,
+  onComplete,
+  expandedId,
+  setExpandedId,
+  localCompleted,
+  setSelectedTxForMap,
+  setShowMapModal,
+  onMarkReceived,
+  onMarkShipped,
+  showMeetingLocationIds,
+  setShowMeetingLocationIds,
+}) {
+  const isRequester = tx.requester?.username === user?.username;
+  const isExpanded = expandedId === tx.id;
+
+  return (
+    <div
+      style={{
+        ...styles.card,
+        cursor: "pointer",
+        background: isExpanded ? "#eef7ff" : "#f9f9f9",
+        transition: "0.2s",
+      }}
+      onClick={() => setExpandedId(isExpanded ? null : tx.id)}
+    >
+      {!isExpanded && (
+        <div>
+          <p>
+            👤{" "}
+            <Link to={`/profile/${tx.owner?.id}`} style={styles.link}>
+              {tx.owner?.username}
+            </Link>
+          </p>
+          <p>
+            🎁 {tx.item_title} — {renderType(tx.transaction_type)}
+          </p>
+        </div>
+      )}
+
+      {isExpanded && (
+        <div>
+          <p>
+            <strong>Προς:</strong>{" "}
+            <Link to={`/profile/${tx.owner?.id}`} style={styles.link}>
+              {tx.owner?.username}
+            </Link>
+          </p>
+          <p>
+            <strong>Αντικείμενο:</strong>{" "}
+            <Link to={`/items/${tx.item}`} style={styles.link}>
+              {tx.item_title}
+            </Link>
+          </p>
+          <p>
+            <strong>Τύπος:</strong> {renderType(tx.transaction_type)}
+          </p>
+          <p>
+            <strong>Κατάσταση:</strong> {renderStatus(tx.status)}
+          </p>
+
+          {tx.transaction_type === "exchange" && tx.requested_item_title && (
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "10px",
+                background: "#f0f8ff",
+                borderRadius: "8px",
+                padding: "8px 10px",
+                marginTop: "8px",
+              }}
+            >
+              <div style={{ flex: 1, textAlign: "center" }}>
+                <p style={{ margin: 0 }}>
+                  🎁 <strong>{tx.item_title}</strong>
+                </p>
+                <p style={{ margin: 0, fontSize: "0.9em", color: "#555" }}>
+                  του {tx.owner?.username}
+                </p>
+              </div>
+
+              <span style={{ fontSize: "1.4em" }}>⇄</span>
+
+              <div style={{ flex: 1, textAlign: "center" }}>
+                <p style={{ margin: 0 }}>
+                  🎁 <strong>{tx.requested_item_title}</strong>
+                </p>
+                <p style={{ margin: 0, fontSize: "0.9em", color: "#555" }}>
+                  του {tx.requester?.username}
+                </p>
+              </div>
+            </div>
+          )}
+
+          {tx.transaction_type === "loan" && tx.start_date && tx.end_date && (
+            <p>
+              <strong>Ημερ. Δανεισμού:</strong>{" "}
+              {new Date(tx.start_date).toLocaleDateString("el-GR")} –{" "}
+              {new Date(tx.end_date).toLocaleDateString("el-GR")}
+            </p>
+          )}
+
+          {/* Τοποθεσία συνάντησης (όπως στο TransactionCard) */}
+          {(tx.meeting_lat && tx.meeting_lng) || tx.meeting_address ? (
+            <>
+              <button
+                style={styles.mapButton}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setShowMeetingLocationIds((prev) => {
+                    const newSet = new Set(prev);
+                    if (newSet.has(tx.id)) newSet.delete(tx.id);
+                    else newSet.add(tx.id);
+                    return newSet;
+                  });
+                }}
+              >
+                {showMeetingLocationIds.has(tx.id)
+                  ? "❌ Απόκρυψη τοποθεσίας"
+                  : "📍 Εμφάνιση τοποθεσίας συνάντησης"}
+              </button>
+
+              {showMeetingLocationIds.has(tx.id) && (
+                <div style={{ marginTop: "10px" }}>
+                  <p style={{ color: "#007bff", marginBottom: "8px" }}>
+                    📍 <strong>Τοποθεσία συνάντησης:</strong>{" "}
+                    {tx.meeting_address
+                      ? tx.meeting_address
+                      : `(${tx.meeting_lat.toFixed(
+                          5
+                        )}, ${tx.meeting_lng.toFixed(5)})`}
+                  </p>
+
+                  <div
+                    style={{
+                      border: "1px solid #ccc",
+                      borderRadius: "8px",
+                      overflow: "hidden",
+                      height: "260px",
+                    }}
+                  >
+                    <MapSelector tx={tx} onSelectLocation={() => {}} />
+                  </div>
+                </div>
+              )}
+            </>
+          ) : null}
+
+          {/* Επιλογή Τοποθεσίας — ίδιο με TransactionCard */}
+          {(tx.delivery_method === "in_person" ||
+            tx.delivery_method === "pickup_point") && (
+            <button
+              style={styles.mapButton}
+              onClick={(e) => {
+                e.stopPropagation();
+                setSelectedTxForMap(tx);
+                setShowMapModal(true);
+              }}
+            >
+              📍 Επιλογή Τοποθεσίας
+            </button>
+          )}
+
+          {tx.distance_km !== null && (
+            <p style={{ color: "#555" }}>
+              📍 Απόσταση:{" "}
+              <strong style={{ color: "#007bff" }}>{tx.distance_km} km</strong>
+            </p>
+          )}
+
+          <button
+            style={styles.chatButton}
+            onClick={(e) => {
+              e.stopPropagation();
+              setActiveChat({
+                transactionId: tx.id,
+                receiverId: tx.owner?.id,
+              });
+            }}
+          >
+            💬 Συνομιλία
+          </button>
+
+          {isRequester && (
+            <>
+              <div
+                style={{
+                  marginTop: 10,
+                  display: "flex",
+                  gap: 8,
+                  flexWrap: "wrap",
+                }}
+              >
+                {/* Ανταλλαγή */}
                 {tx.transaction_type === "exchange" &&
                   tx.status === "pending_confirmation" && (
                     <>
@@ -935,7 +1380,7 @@ function TransactionCard({
                         style={styles.primaryBtn}
                         onClick={(e) => {
                           e.stopPropagation();
-                          onAccept();
+                          onConfirmExchange();
                         }}
                       >
                         🔁 Επιβεβαίωση ανταλλαγής
@@ -944,7 +1389,7 @@ function TransactionCard({
                         style={styles.dangerBtn}
                         onClick={(e) => {
                           e.stopPropagation();
-                          onReject();
+                          onRejectExchange();
                         }}
                       >
                         🚫 Απόρριψη
@@ -952,21 +1397,122 @@ function TransactionCard({
                     </>
                   )}
 
-                {/* Δανεισμός: Accepted → Δήλωση επιστροφής */}
-                {tx.transaction_type === "loan" && tx.status === "accepted" && (
-                  <button
-                    style={styles.secondaryBtn}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onComplete(); // μπορείς να το αλλάξεις σε handleReturnLoan(tx.id)
-                    }}
-                  >
-                    ↩️ Δήλωση επιστροφής
-                  </button>
-                )}
-              </>
-            )}
-          </div>
+                {/* Δανεισμός με courier */}
+                {tx.delivery_method === "shipping" &&
+                  tx.transaction_type === "loan" && (
+                    <div style={{ marginTop: "10px" }}>
+                      {!tx.owner_shipped && (
+                        <p style={{ color: "#999" }}>
+                          🕒 Αναμονή αποστολής από τον ιδιοκτήτη
+                        </p>
+                      )}
+                      {tx.owner_shipped && !tx.requester_received && (
+                        <button
+                          style={styles.primaryBtn}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onMarkReceived();
+                          }}
+                        >
+                          📦 Επιβεβαίωση παραλαβής
+                        </button>
+                      )}
+                      {tx.requester_received && (
+                        <p style={{ color: "#28a745" }}>
+                          ✅ Έχεις επιβεβαιώσει παραλαβή
+                        </p>
+                      )}
+                      {tx.requester_received && (
+                        <button
+                          style={styles.secondaryBtn}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onReturnLoan();
+                          }}
+                        >
+                          ↩️ Δήλωση επιστροφής
+                        </button>
+                      )}
+                      {tx.owner_shipped && tx.requester_received && (
+                        <p style={{ color: "#28a745" }}>
+                          🏁 Η συναλλαγή ολοκληρώθηκε!
+                        </p>
+                      )}
+                    </div>
+                  )}
+
+                {/* Ανταλλαγή με courier */}
+                {tx.delivery_method === "shipping" &&
+                  tx.transaction_type === "exchange" &&
+                  tx.status === "accepted" && (
+                    <div style={{ marginTop: "10px" }}>
+                      {!tx.requester_shipped ? (
+                        <button
+                          style={styles.primaryBtn}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onMarkShipped(tx.id);
+                          }}
+                        >
+                          📦 Επιβεβαίωση αποστολής
+                        </button>
+                      ) : (
+                        <p style={{ color: "#28a745" }}>
+                          ✅ Έχεις επιβεβαιώσει αποστολή
+                        </p>
+                      )}
+
+                      {tx.owner_shipped && !tx.requester_received && (
+                        <button
+                          style={styles.secondaryBtn}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onMarkReceived(tx.id);
+                          }}
+                        >
+                          📦 Επιβεβαίωση παραλαβής
+                        </button>
+                      )}
+
+                      {tx.requester_received && (
+                        <p style={{ color: "#28a745" }}>
+                          ✅ Έχεις επιβεβαιώσει παραλαβή
+                        </p>
+                      )}
+
+                      {tx.owner_received && tx.requester_received && (
+                        <p style={{ color: "#28a745" }}>
+                          🏁 Η ανταλλαγή ολοκληρώθηκε!
+                        </p>
+                      )}
+                    </div>
+                  )}
+
+                {/* Χέρι με χέρι ανταλλαγή – Ολοκλήρωση */}
+                {tx.transaction_type === "exchange" &&
+                  tx.delivery_method === "in_person" &&
+                  tx.status === "accepted" && (
+                    <div style={{ marginTop: "10px" }}>
+                      {!localCompleted.has(tx.id) ? (
+                        <button
+                          style={styles.primaryBtn}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onComplete();
+                          }}
+                        >
+                          🏁 Ολοκλήρωση ανταλλαγής
+                        </button>
+                      ) : (
+                        <p style={{ color: "#999" }}>
+                          🕒 Αναμονή ολοκλήρωσης από τον άλλο χρήστη
+                        </p>
+                      )}
+                    </div>
+                  )}
+              </div>
+            </>
+          )}
         </div>
       )}
     </div>

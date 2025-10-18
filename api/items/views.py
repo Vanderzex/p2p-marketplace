@@ -8,13 +8,13 @@ from math import radians, sin, cos, asin, sqrt
 from .models import Item, ItemImage
 from .serializers import ItemSerializer, ItemImageSerializer
 from .permissions import IsOwnerOrReadOnly
-from .filters import ItemFilter  # ➕ ΝΕΟ
+from .filters import ItemFilter  # ΝΕΟ
 
 from transactions.models import Transaction
 from transactions.serializers import TransactionSerializer
 
 
-# 🌍 Συνάρτηση υπολογισμού απόστασης (Haversine formula)
+# Συνάρτηση υπολογισμού απόστασης (Haversine formula)
 def haversine(lat1, lon1, lat2, lon2):
     if None in [lat1, lon1, lat2, lon2]:
         return None
@@ -37,11 +37,11 @@ class ItemViewSet(viewsets.ModelViewSet):
     search_fields = ["title", "description"]
     ordering_fields = ["created_at", "title"]
 
-    # ✅ Διορθωμένη μέθοδος get_queryset()
+    # Διορθωμένη μέθοδος get_queryset()
     def get_queryset(self):
         queryset = super().get_queryset()
 
-        # 🔹 Ανάγνωση query params για απόσταση
+        # Ανάγνωση query params για απόσταση
         lat = self.request.query_params.get("lat")
         lon = self.request.query_params.get("lon")
         max_distance = self.request.query_params.get("max_distance")
@@ -63,7 +63,7 @@ class ItemViewSet(viewsets.ModelViewSet):
             print("⚠️ Invalid lat/lon/max_distance values")
             return queryset
 
-        # 🔹 Φιλτράρισμα αντικειμένων βάσει απόστασης (επιστρέφουμε QuerySet)
+        # Φιλτράρισμα αντικειμένων βάσει απόστασης (επιστρέφουμε QuerySet)
         filtered_ids = []
         for item in queryset:
             owner = item.owner
@@ -75,7 +75,7 @@ class ItemViewSet(viewsets.ModelViewSet):
 
         print(f"✅ Found {len(filtered_ids)} items within {max_distance} km")
 
-        # ✅ Επιστρέφουμε QuerySet (όχι list)
+        # Επιστρέφουμε QuerySet (όχι list)
         filtered_qs = queryset.filter(id__in=filtered_ids)
 
         # Προσθέτουμε προσωρινό distance για serializer
@@ -88,7 +88,7 @@ class ItemViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         serializer.save(owner=self.request.user)
 
-    # 📸 Ανέβασμα επιπλέον εικόνας
+    # Ανέβασμα επιπλέον εικόνας (ενημερώνει και το main_image)
     @action(detail=True, methods=['post'], permission_classes=[permissions.IsAuthenticated])
     def upload_image(self, request, pk=None):
         item = self.get_object()
@@ -104,11 +104,19 @@ class ItemViewSet(viewsets.ModelViewSet):
             return Response({'detail': 'Δεν στάλθηκε καμία εικόνα.'},
                             status=status.HTTP_400_BAD_REQUEST)
 
-        ItemImage.objects.create(item=item, image=image)
-        return Response({'detail': 'Η εικόνα ανέβηκε επιτυχώς!'},
-                        status=status.HTTP_201_CREATED)
+        # Δημιουργία εγγραφής στη gallery
+        new_img = ItemImage.objects.create(item=item, image=image)
 
-    # 🔍 Προβολή όλων των συναλλαγών ενός αντικειμένου
+        # Ενημέρωση του main_image στο ίδιο το αντικείμενο
+        item.main_image = new_img.image
+        item.save(update_fields=["main_image"])
+
+        return Response({
+            'detail': 'Η εικόνα ανέβηκε επιτυχώς!',
+            'main_image': item.main_image.url
+        }, status=status.HTTP_201_CREATED)
+
+    # Προβολή όλων των συναλλαγών ενός αντικειμένου
     @action(detail=True, methods=['get'], permission_classes=[permissions.IsAuthenticated])
     def transactions(self, request, pk=None):
         item = self.get_object()
@@ -116,14 +124,14 @@ class ItemViewSet(viewsets.ModelViewSet):
         serializer = TransactionSerializer(transactions, many=True)
         return Response(serializer.data)
 
-    # 📦 Αντικείμενα συνδεδεμένου χρήστη
+    # Αντικείμενα συνδεδεμένου χρήστη
     @action(detail=False, methods=['get'], permission_classes=[permissions.IsAuthenticated])
     def my_items(self, request):
         items = Item.objects.filter(owner=request.user, available=True)
         serializer = self.get_serializer(items, many=True)
         return Response(serializer.data)
 
-    # 👤 Αντικείμενα συγκεκριμένου χρήστη (χωρίς authentication)
+    # Αντικείμενα συγκεκριμένου χρήστη (χωρίς authentication)
     @action(
         detail=False,
         methods=['get'],
@@ -142,7 +150,7 @@ class ItemViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(items, many=True)
         return Response(serializer.data)
 
-    # 🧾 Δημιουργία συναλλαγής (ανταλλαγή / δανεισμός)
+    # Δημιουργία συναλλαγής (ανταλλαγή / δανεισμός)
     @action(detail=True, methods=['post'], permission_classes=[permissions.IsAuthenticated])
     def create_transaction(self, request, pk=None):
         item = self.get_object()
@@ -176,7 +184,7 @@ class ItemViewSet(viewsets.ModelViewSet):
                                 status=status.HTTP_400_BAD_REQUEST)
 
             if requested_item.id == item.id:
-                return Response({'detail': 'Δεν μπορείς να ανταλλάξεις το ίδιο αντικείμενο με τον εαυτό του.'},
+                return Response({'detail': 'Δεν μπορείς να ανταλλάξεις το ίδιο αντικείμενο με τον εαυτό σου.'},
                                 status=status.HTTP_400_BAD_REQUEST)
             if not requested_item.available:
                 return Response({'detail': 'Το αντικείμενο που προσφέρεις δεν είναι διαθέσιμο.'},
@@ -198,7 +206,7 @@ class ItemViewSet(viewsets.ModelViewSet):
         serializer = TransactionSerializer(transaction)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
-    # 🔄 Αλλαγή διαθεσιμότητας
+    # Αλλαγή διαθεσιμότητας
     @action(detail=True, methods=['post'], permission_classes=[permissions.IsAuthenticated])
     def set_availability(self, request, pk=None):
         item = self.get_object()

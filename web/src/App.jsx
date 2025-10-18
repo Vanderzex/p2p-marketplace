@@ -16,18 +16,27 @@ import MyTransactionsPage from "./MyTransactionsPage";
 import NotificationsBell from "./NotificationsBell";
 import NotificationsPage from "./NotificationsPage";
 import ChangePasswordPage from "./ChangePasswordPage";
+import { useLocation } from "react-router-dom";
+import UserReviewsPage from "./UserReviewsPage";
+
+import { Swiper, SwiperSlide } from "swiper/react";
+import { Navigation, Pagination, Autoplay } from "swiper/modules";
+import "swiper/css";
+import "swiper/css/navigation";
+import "swiper/css/pagination";
 
 export default function App() {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [successMessage, setSuccessMessage] = useState("");
+  const location = useLocation();
 
   const { user, logout, isAuthenticated } = useAuth();
 
   useEffect(() => {
     fetchItems();
-  }, []);
+  }, [location.state?.refreshItems]);
 
   const fetchItems = async () => {
     try {
@@ -146,12 +155,28 @@ export default function App() {
             </ProtectedRoute>
           }
         />
+        <Route
+          path="/change-password"
+          element={
+            <ProtectedRoute>
+              <ChangePasswordPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/user-reviews/:userId"
+          element={
+            <ProtectedRoute>
+              <UserReviewsPage />
+            </ProtectedRoute>
+          }
+        />
       </Routes>
     </>
   );
 }
 
-/** 🏠 Κεντρική σελίδα με αναζήτηση & φίλτρα */
+/** Κεντρική σελίδα με αναζήτηση & φίλτρα */
 function HomePage({
   items,
   setItems,
@@ -171,7 +196,7 @@ function HomePage({
 
   const { token } = useAuth();
 
-  // ✅ Αυτόματο fetch τοποθεσίας από backend (/api/me/)
+  // Αυτόματο fetch τοποθεσίας από backend (/api/me/)
   useEffect(() => {
     const fetchUserLocation = async () => {
       if (!token) return;
@@ -182,11 +207,7 @@ function HomePage({
         const data = await res.json();
         if (data.latitude && data.longitude) {
           setUserCoords({ lat: data.latitude, lon: data.longitude });
-          console.log(
-            "✅ Φορτώθηκε τοποθεσία από backend:",
-            data.latitude,
-            data.longitude
-          );
+          console.log("✅ Φορτώθηκε τοποθεσία:", data.latitude, data.longitude);
         }
       } catch (err) {
         console.error("Σφάλμα φόρτωσης τοποθεσίας χρήστη:", err);
@@ -196,7 +217,7 @@ function HomePage({
     fetchUserLocation();
   }, [token]);
 
-  // 📍 Εναλλακτική: χρήση geolocation
+  // Εναλλακτική: χρήση geolocation
   const getUserLocation = () => {
     if (!navigator.geolocation) {
       toast.error("Ο browser σου δεν υποστηρίζει geolocation.");
@@ -204,10 +225,7 @@ function HomePage({
     }
     navigator.geolocation.getCurrentPosition(
       (pos) => {
-        const coords = {
-          lat: pos.coords.latitude,
-          lon: pos.coords.longitude,
-        };
+        const coords = { lat: pos.coords.latitude, lon: pos.coords.longitude };
         setUserCoords(coords);
         toast.success("📍 Τοποθεσία αποθηκεύτηκε!");
       },
@@ -215,23 +233,11 @@ function HomePage({
     );
   };
 
-  // 🔍 Αναζήτηση με φίλτρα
+  // Αναζήτηση με φίλτρα
   const fetchFilteredItems = async () => {
     setIsSearching(true);
-    console.log("🌍 Sending filters:", {
-      userCoords,
-      maxDistance,
-      query,
-      transactionType,
-      category,
-      onlyAvailable,
-    });
-
-    // ⚠️ Έλεγχος για περίπτωση που λείπει η τοποθεσία
     if (maxDistance && !userCoords) {
-      toast.error(
-        "📍 Δεν έχει οριστεί τοποθεσία χρήστη. Πάτησε 'Χρήση τοποθεσίας' πρώτα!"
-      );
+      toast.error("📍 Δεν έχει οριστεί τοποθεσία χρήστη.");
       setIsSearching(false);
       return;
     }
@@ -243,8 +249,6 @@ function HomePage({
       if (category) params.append("category", category);
       if (onlyAvailable) params.append("available", "true");
       if (minRating) params.append("min_rating", minRating);
-
-      // ✅ Προσθήκη μόνο αν έχουμε πλήρη συντεταγμένα ΚΑΙ απόσταση
       if (userCoords && maxDistance) {
         params.append("lat", userCoords.lat);
         params.append("lon", userCoords.lon);
@@ -252,10 +256,9 @@ function HomePage({
       }
 
       const url = `http://localhost:8000/api/items/?${params.toString()}`;
-      console.log("🔗 URL που στέλνεται:", url);
+      console.log("🔗 URL:", url);
 
       const res = await fetch(url);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       setItems(Array.isArray(data) ? data : data.results || []);
     } catch (err) {
@@ -275,147 +278,175 @@ function HomePage({
         Αναζήτησε, φίλτραρε και εξερεύνησε αντικείμενα κοντά σου
       </p>
 
-      <div style={styles.filters}>
-        <input
-          type="text"
-          placeholder="Αναζήτηση..."
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          style={styles.searchInput}
-        />
-
-        <select
-          value={transactionType}
-          onChange={(e) => setTransactionType(e.target.value)}
-          style={styles.select}
-        >
-          <option value="">Όλοι οι τύποι</option>
-          <option value="exchange">Ανταλλαγή</option>
-          <option value="loan">Δανεισμός</option>
-        </select>
-
-        <select
-          value={category}
-          onChange={(e) => setCategory(e.target.value)}
-          style={styles.select}
-        >
-          <option value="">Όλες οι κατηγορίες</option>
-          <option value="electronics">Ηλεκτρονικά</option>
-          <option value="books">Βιβλία</option>
-          <option value="clothing">Ρούχα</option>
-          <option value="furniture">Έπιπλα</option>
-          <option value="sports">Αθλητικά</option>
-          <option value="tools">Εργαλεία</option>
-          <option value="other">Άλλο</option>
-        </select>
-
-        {/* 🆕 Ελάχιστη βαθμολογία */}
-        <select
-          value={minRating}
-          onChange={(e) => setMinRating(e.target.value)}
-          style={styles.select}
-        >
-          <option value="">Όλες οι βαθμολογίες</option>
-          <option value="1">1 ⭐+</option>
-          <option value="2">2 ⭐+</option>
-          <option value="3">3 ⭐+</option>
-          <option value="4">4 ⭐+</option>
-          <option value="4.5">4.5 ⭐+</option>
-        </select>
-
-        <label>
+      <div style={styles.wrapper}>
+        {/* Φίλτρα */}
+        <div style={styles.filters}>
           <input
-            type="checkbox"
-            checked={onlyAvailable}
-            onChange={(e) => setOnlyAvailable(e.target.checked)}
-            style={{ marginRight: "6px" }}
+            type="text"
+            placeholder="Αναζήτηση..."
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            style={styles.searchInput}
           />
-          Μόνο διαθέσιμα
-        </label>
 
-        <button
-          onClick={getUserLocation}
-          style={{ ...styles.button, marginLeft: "10px" }}
-        >
-          📍 Χρήση τοποθεσίας
-        </button>
+          <select
+            value={transactionType}
+            onChange={(e) => setTransactionType(e.target.value)}
+            style={styles.select}
+          >
+            <option value="">Όλοι οι τύποι</option>
+            <option value="exchange">Ανταλλαγή</option>
+            <option value="loan">Δανεισμός</option>
+          </select>
 
-        <input
-          type="number"
-          placeholder="Απόσταση (km)"
-          value={maxDistance}
-          onChange={(e) => setMaxDistance(e.target.value)}
-          style={{ ...styles.searchInput, width: "140px" }}
-        />
+          <select
+            value={category}
+            onChange={(e) => setCategory(e.target.value)}
+            style={styles.select}
+          >
+            <option value="">Όλες οι κατηγορίες</option>
+            <option value="electronics">Ηλεκτρονικά</option>
+            <option value="books">Βιβλία</option>
+            <option value="clothing">Ρούχα</option>
+            <option value="furniture">Έπιπλα</option>
+            <option value="sports">Αθλητικά</option>
+            <option value="tools">Εργαλεία</option>
+            <option value="other">Άλλο</option>
+          </select>
 
-        <button
-          onClick={fetchFilteredItems}
-          style={{ ...styles.button, background: "#0078d4", color: "white" }}
-        >
-          🔎 Αναζήτηση
-        </button>
-      </div>
+          <select
+            value={minRating}
+            onChange={(e) => setMinRating(e.target.value)}
+            style={styles.select}
+          >
+            <option value="">Όλες οι βαθμολογίες</option>
+            <option value="1">1 ⭐+</option>
+            <option value="2">2 ⭐+</option>
+            <option value="3">3 ⭐+</option>
+            <option value="4">4 ⭐+</option>
+            <option value="4.5">4.5 ⭐+</option>
+          </select>
 
-      <AddItemForm onAddItem={onAddItem} />
+          <label>
+            <input
+              type="checkbox"
+              checked={onlyAvailable}
+              onChange={(e) => setOnlyAvailable(e.target.checked)}
+              style={{ marginRight: "6px" }}
+            />
+            Μόνο διαθέσιμα
+          </label>
 
-      {loading || isSearching ? (
-        <p>Φόρτωση...</p>
-      ) : error ? (
-        <div style={styles.error}>{error}</div>
-      ) : !Array.isArray(items) || items.length === 0 ? (
-        <p>Δεν βρέθηκαν αντικείμενα.</p>
-      ) : (
-        <div style={styles.list}>
-          {items.map((item) => (
-            <Link
-              key={item.id}
-              to={`/items/${item.id}`}
+          <input
+            type="number"
+            placeholder="Απόσταση (km)"
+            value={maxDistance}
+            onChange={(e) => setMaxDistance(e.target.value)}
+            style={{ ...styles.searchInput, width: "140px" }}
+          />
+
+          <button
+            onClick={fetchFilteredItems}
+            style={{ ...styles.button, background: "#0078d4", color: "white" }}
+          >
+            🔎 Αναζήτηση
+          </button>
+        </div>
+
+        {/* Περιεχόμενο */}
+        {loading || isSearching ? (
+          <p>Φόρτωση...</p>
+        ) : error ? (
+          <div style={styles.error}>{error}</div>
+        ) : !Array.isArray(items) || items.length === 0 ? (
+          <p>Δεν βρέθηκαν αντικείμενα.</p>
+        ) : (
+          <>
+            {/* Carousel Section */}
+            <h2 style={styles.sectionTitle}>✨ Προτεινόμενα αντικείμενα</h2>
+            <Swiper
+              modules={[Navigation, Pagination, Autoplay]}
+              spaceBetween={20}
+              slidesPerView={"auto"}
+              navigation
+              pagination={{ clickable: true }}
+              autoplay={{ delay: 3500 }}
+              loop={true}
               style={{
-                ...styles.card,
-                textDecoration: "none",
-                color: "inherit",
+                paddingBottom: "40px",
+                maxWidth: "1100px",
+                margin: "0 auto",
               }}
             >
-              <h3>{item.title}</h3>
-              <p>{item.description}</p>
-              <small>
-                {item.transaction_type === "exchange"
-                  ? "🔁 Ανταλλαγή"
-                  : "🤝 Δανεισμός"}
-                {!item.available && (
-                  <span style={{ color: "red", marginLeft: "4px" }}>
-                    (Μη διαθέσιμο)
-                  </span>
-                )}
-              </small>
+              {items.slice(0, 10).map((item) => (
+                <SwiperSlide key={item.id} style={{ width: "260px" }}>
+                  <Link to={`/items/${item.id}`} style={styles.carouselCard}>
+                    <img
+                      src={item.image || item.images?.[0]?.image}
+                      alt={item.title}
+                      style={styles.cardImage}
+                    />
+                    <div style={{ padding: "10px" }}>
+                      <h3 style={{ fontWeight: "600" }}>{item.title}</h3>
+                      <p style={{ fontSize: "0.9rem", color: "#666" }}>
+                        {item.category || "Χωρίς κατηγορία"}
+                      </p>
+                      <span
+                        style={{
+                          fontSize: "0.8rem",
+                          background:
+                            item.transaction_type === "exchange"
+                              ? "#D1FAE5"
+                              : "#DBEAFE",
+                          color:
+                            item.transaction_type === "exchange"
+                              ? "#065F46"
+                              : "#1E40AF",
+                          padding: "3px 6px",
+                          borderRadius: "6px",
+                        }}
+                      >
+                        {item.transaction_type === "exchange"
+                          ? "Ανταλλαγή"
+                          : "Δανεισμός"}
+                      </span>
+                    </div>
+                  </Link>
+                </SwiperSlide>
+              ))}
+            </Swiper>
 
-              {/* 🆕 Εμφάνιση κατηγορίας */}
-              <p style={{ marginTop: "4px", color: "#666" }}>
-                🏷️ Κατηγορία: <strong>{item.category}</strong>
-              </p>
-
-              {/* 🆕 Εμφάνιση μέσης βαθμολογίας ιδιοκτήτη */}
-              {item.owner_rating && (
-                <p style={{ marginTop: "4px", color: "#f1c40f" }}>
-                  ⭐ Μέση βαθμολογία ιδιοκτήτη:{" "}
-                  <strong>{item.owner_rating}</strong>
-                </p>
-              )}
-
-              {item.distance_km && (
-                <p style={{ marginTop: "6px", color: "#007bff" }}>
-                  📍 Απόσταση: <strong>{item.distance_km} km</strong>
-                </p>
-              )}
-            </Link>
-          ))}
-        </div>
-      )}
+            {/* Grid Section */}
+            <h2 style={styles.sectionTitle}>🆕 Νέα αντικείμενα</h2>
+            <div style={styles.list}>
+              {items.slice(0, 8).map((item) => (
+                <Link
+                  key={item.id}
+                  to={`/items/${item.id}`}
+                  style={styles.gridCard}
+                >
+                  <img
+                    src={item.image || item.images?.[0]?.image}
+                    alt={item.title}
+                    style={styles.cardImage}
+                  />
+                  <div style={{ padding: "10px" }}>
+                    <h3>{item.title}</h3>
+                    <p style={{ fontSize: "0.9rem", color: "#555" }}>
+                      {item.category}
+                    </p>
+                  </div>
+                </Link>
+              ))}
+            </div>
+          </>
+        )}
+      </div>
     </div>
   );
 }
 
-// 🎨 Styling
+// Styling
 const styles = {
   navbar: {
     background: "#0078d4",
@@ -501,6 +532,13 @@ const styles = {
     width: "250px",
     textAlign: "left",
     cursor: "pointer",
+  },
+  cardImage: {
+    width: "100%",
+    height: "160px",
+    objectFit: "cover",       
+    objectPosition: "center", 
+    display: "block",
   },
   button: {
     padding: "6px 10px",

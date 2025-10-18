@@ -7,10 +7,11 @@ from transactions.models import Transaction, Review
 User = get_user_model()
 
 
-# 🔹 Βασικός serializer χρήστη
+# Βασικός serializer χρήστη
 class UserSerializer(serializers.ModelSerializer):
     average_rating = serializers.SerializerMethodField()
     total_completed_transactions = serializers.SerializerMethodField()
+    profile_image_url = serializers.SerializerMethodField()
 
     class Meta:
         model = User
@@ -27,7 +28,9 @@ class UserSerializer(serializers.ModelSerializer):
             # ➕ Στατιστικά
             "average_rating",
             "total_completed_transactions",
+            # Εικόνα
             "profile_image",
+            "profile_image_url",
         ]
 
     # Μέση αξιολόγηση
@@ -41,6 +44,16 @@ class UserSerializer(serializers.ModelSerializer):
             Q(requester=obj) | Q(owner=obj),
             status="completed",
         ).count()
+
+    # Νέο: πλήρες URL της φωτογραφίας
+    def get_profile_image_url(self, obj):
+        request = self.context.get("request")
+        if obj.profile_image and hasattr(obj.profile_image, "url"):
+            url = obj.profile_image.url
+            if request:
+                return request.build_absolute_uri(url)
+            return url
+        return None
 
     # Επιστροφή λίστας αξιολογήσεων χωρίς circular import
     def to_representation(self, instance):
@@ -56,7 +69,8 @@ class UserSerializer(serializers.ModelSerializer):
         return representation
 
 
-# 🔹 Εγγραφή νέου χρήστη
+
+# Εγγραφή νέου χρήστη
 class RegisterSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True)
 
@@ -73,7 +87,7 @@ class RegisterSerializer(serializers.ModelSerializer):
         return user
 
 
-# 🔹 Εγγραφή + αυτόματη έκδοση token (προαιρετικό)
+# Εγγραφή + αυτόματη έκδοση token (προαιρετικό)
 class RegisterWithTokenSerializer(RegisterSerializer):
     token = serializers.SerializerMethodField()
 

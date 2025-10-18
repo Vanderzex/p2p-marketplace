@@ -149,7 +149,7 @@ export default function AddItemForm({ onAddItem }) {
         <option value="other">📦 Άλλο</option>
       </select>
 
-      {/* 🆕 Τρόπος Παράδοσης */}
+      {/* Τρόπος Παράδοσης */}
       <label style={styles.label}>Τρόπος Παράδοσης *</label>
       <select
         value={deliveryMethod}
