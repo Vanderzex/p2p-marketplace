@@ -7,7 +7,7 @@ from transactions.models import Transaction
 class ItemImageSerializer(serializers.ModelSerializer):
     class Meta:
         model = ItemImage
-        fields = ["id", "image", "uploaded_at"]  # uploaded_at αν υπάρχει στο model
+        fields = ["id", "image", "uploaded_at"]
 
 
 # Serializer για το αντικείμενο (Item)
@@ -21,9 +21,23 @@ class ItemSerializer(serializers.ModelSerializer):
     # Πληροφορίες ιδιοκτήτη
     owner_id = serializers.ReadOnlyField(source="owner.id")
     owner_username = serializers.ReadOnlyField(source="owner.username")
+    owner_profile_image = serializers.SerializerMethodField()
+
+    def get_owner_profile_image(self, obj):
+      request = self.context.get('request')
+      if obj.owner.profile_image:
+        return request.build_absolute_uri(obj.owner.profile_image.url)
+      return None
 
     # Όλες οι συναλλαγές που σχετίζονται με το αντικείμενο
     transactions = serializers.SerializerMethodField()
+
+    owner_rating_percent = serializers.SerializerMethodField()
+
+    def get_owner_rating_percent(self, obj):
+      if hasattr(obj.owner, "avg_rating"):
+        return round((obj.owner.avg_rating / 5) * 100)
+      return None
 
     class Meta:
         model = Item
@@ -42,6 +56,9 @@ class ItemSerializer(serializers.ModelSerializer):
             "transactions",
             "category",
             "delivery_method",
+            "owner_profile_image",
+            "views",
+            "owner_rating_percent",
         ]
 
     # Lazy import για αποφυγή circular import (π.χ. items ↔ transactions)

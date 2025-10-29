@@ -10,8 +10,8 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
   const [tokenExpiry, setTokenExpiry] = useState(null);
   const refreshingRef = useRef(false);
-
-  // 🔹 Αρχικοποίηση από localStorage
+  const sessionExpiredRef = useRef(false);
+  // Αρχικοποίηση από localStorage
   useEffect(() => {
     const storedToken = localStorage.getItem("token");
     const storedUser = localStorage.getItem("user");
@@ -53,7 +53,7 @@ export const AuthProvider = ({ children }) => {
     }
   }, []);
 
-  // 🔐 Είσοδος χρήστη
+  // Είσοδος χρήστη
   const login = async (username, password) => {
     try {
       const response = await fetch("http://localhost:8000/api/login/", {
@@ -90,7 +90,13 @@ export const AuthProvider = ({ children }) => {
       setUser(meData);
       localStorage.setItem("user", JSON.stringify(meData));
 
-      toast.success("✅ Συνδέθηκες επιτυχώς!");
+      // Επιστροφή στην τελευταία σελίδα
+      const lastPath = localStorage.getItem("lastVisitedPath");
+      if (lastPath) {
+        localStorage.removeItem("lastVisitedPath");
+        window.location.href = lastPath;
+      }
+
       return true;
     } catch (err) {
       console.error("Σφάλμα login:", err);
@@ -99,7 +105,7 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  // 🧾 Εγγραφή
+  // Εγγραφή
   const register = async (username, password) => {
     try {
       const response = await fetch("http://localhost:8000/api/register/", {
@@ -118,7 +124,7 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  // ♻️ Refresh token
+  // Refresh token
   const refreshToken = async () => {
     if (refreshingRef.current) return;
     refreshingRef.current = true;
@@ -126,7 +132,7 @@ export const AuthProvider = ({ children }) => {
     const refresh = localStorage.getItem("refresh");
     if (!refresh) {
       refreshingRef.current = false;
-      return logout();
+      return logout(true);
     }
 
     try {
@@ -145,17 +151,17 @@ export const AuthProvider = ({ children }) => {
       const decoded = jwtDecode(data.access);
       setTokenExpiry(decoded.exp * 1000);
 
-      toast.success("✅ Το token ανανεώθηκε!");
+      toast.success("🔁 Το token ανανεώθηκε!");
     } catch (err) {
       console.error("Σφάλμα refresh token:", err);
-      toast.error("⏳ Το token έληξε. Συνδέσου ξανά.");
+      toast.error("⏳ Η συνεδρία σου έληξε — κάνε login ξανά.");
       logout();
     } finally {
       refreshingRef.current = false;
     }
   };
 
-  // ⏱️ Έλεγχος & auto refresh
+  // Αυτόματος έλεγχος λήξης token
   useEffect(() => {
     if (!tokenExpiry) return;
 
@@ -164,7 +170,6 @@ export const AuthProvider = ({ children }) => {
       const timeLeft = tokenExpiry - now;
 
       if (timeLeft <= 0) {
-        toast.error("⏳ Το token έληξε. Συνδέσου ξανά.");
         logout();
         clearInterval(interval);
       } else if (timeLeft < 30 * 1000 && !refreshingRef.current) {
@@ -175,18 +180,27 @@ export const AuthProvider = ({ children }) => {
     return () => clearInterval(interval);
   }, [tokenExpiry]);
 
-  // 🚪 Αποσύνδεση
-  const logout = () => {
+  // Αποσύνδεση (με διάκριση αν έληξε ή χειροκίνητα)
+  const logout = (expired = false) => {
+    // Αποθήκευση τελευταίου path για επιστροφή μετά το login
+    const lastPath = window.location.pathname;
+    localStorage.setItem("lastVisitedPath", lastPath);
+
     setUser(null);
     setToken(null);
     setTokenExpiry(null);
     localStorage.removeItem("token");
     localStorage.removeItem("refresh");
     localStorage.removeItem("user");
-    toast("👋 Αποσυνδεθήκατε");
+
+    if (expired) {
+      toast.error("🔒 Η συνεδρία σου έληξε. Κάνε login για να συνεχίσεις.");
+    } else {
+      toast.success("👋 Αποσυνδεθήκατε με επιτυχία!");
+    }
   };
 
-  // 🧩 ΝΕΟ: Helper για fetch με αυτόματο Authorization & retry
+  // Helper fetch με αυτόματο Authorization & retry
   const authFetch = async (url, options = {}) => {
     if (!token) throw new Error("No auth token available");
 
@@ -200,7 +214,6 @@ export const AuthProvider = ({ children }) => {
 
     let res = await fetch(url, { ...options, headers });
 
-    // Αν το token έληξε, κάνε refresh και ξαναδοκίμασε
     if (res.status === 401) {
       console.warn("🔁 Token πιθανόν έληξε, ανανέωση...");
       await refreshToken();
@@ -227,7 +240,7 @@ export const AuthProvider = ({ children }) => {
         register,
         logout,
         refreshToken,
-        authFetch, // 🔒 ασφαλής fetch για προστατευμένα endpoints
+        authFetch,
         isAuthenticated: !!user,
       }}
     >

@@ -1,19 +1,25 @@
 import { useEffect, useState } from "react";
 import { useAuth } from "./context/AuthContext";
 import toast from "react-hot-toast";
+import {
+  FaComments,
+  FaPaperPlane,
+  FaExclamationTriangle,
+  FaTimesCircle,
+} from "react-icons/fa";
 
-export default function ChatBox({ receiverId, transactionId }) {
+export default function ChatBox({ receiverId, transactionId, itemId }) {
   const { user, token } = useAuth();
   const [messages, setMessages] = useState([]);
   const [newMessage, setNewMessage] = useState("");
   const [loading, setLoading] = useState(true);
 
-  // 🧩 Επιλογή σωστού endpoint
+  // Επιλογή σωστού endpoint
   const fetchUrl = transactionId
     ? `http://localhost:8000/api/chat/transaction/${transactionId}/`
     : `http://localhost:8000/api/chat/thread/${receiverId}/`;
 
-  // 📩 Φόρτωση μηνυμάτων
+  // Φόρτωση μηνυμάτων
   useEffect(() => {
     if (!token || (!receiverId && !transactionId)) return;
 
@@ -23,37 +29,37 @@ export default function ChatBox({ receiverId, transactionId }) {
           headers: { Authorization: `Bearer ${token}` },
         });
 
-        // Αν το response δεν είναι 2xx → error
         if (!res.ok) {
-          const txt = await res.text();
-          console.error("❌ Chat API error:", res.status, txt);
-          throw new Error("Σφάλμα φόρτωσης μηνυμάτων");
+          console.error("❌ Chat API error:", res.status);
+          return;
         }
 
-        // ✅ Διαβάζουμε με ασφάλεια το JSON
         const data = await res.json();
         if (Array.isArray(data)) {
           setMessages(data);
-        } else {
-          console.warn("⚠️ Απροσδόκητη απάντηση από API:", data);
-          setMessages([]);
         }
       } catch (err) {
         console.error("⚠️ Σφάλμα φόρτωσης συνομιλίας:", err);
-        // Δεν κάνουμε toast αν απλά δεν υπάρχουν μηνύματα
-      } finally {
-        setLoading(false);
       }
     };
 
+    // φόρτωσε μια φορά και μετά κάνε polling
     fetchMessages();
+    setLoading(false); // σταματά η ένδειξη "Φόρτωση..."
+
     const interval = setInterval(fetchMessages, 5000);
     return () => clearInterval(interval);
   }, [token, receiverId, transactionId]);
 
-  // ✉️ Αποστολή νέου μηνύματος
+  useEffect(() => {
+    const box = document.getElementById("messagesBox");
+    if (box) box.scrollTop = box.scrollHeight;
+  }, [messages]);
+
+  // Αποστολή νέου μηνύματος
   const handleSend = async (e) => {
     e.preventDefault();
+    console.log("🟢 sender:", user?.id, "receiver:", receiverId);
     if (!newMessage.trim()) return;
 
     try {
@@ -67,6 +73,7 @@ export default function ChatBox({ receiverId, transactionId }) {
           receiver: receiverId,
           text: newMessage,
           transaction: transactionId || null,
+          item: itemId || null,
         }),
       });
 
@@ -87,12 +94,12 @@ export default function ChatBox({ receiverId, transactionId }) {
 
   return (
     <div style={styles.chatContainer}>
-      <h3>💬 Συνομιλία</h3>
+      <h3><FaComments/> Συνομιλία</h3>
 
       {loading ? (
         <p>Φόρτωση...</p>
       ) : (
-        <div style={styles.messagesBox}>
+        <div id="messagesBox" style={styles.messagesBox}>
           {messages.length === 0 ? (
             <p style={{ color: "#777" }}>Δεν υπάρχουν μηνύματα.</p>
           ) : (
@@ -120,7 +127,7 @@ export default function ChatBox({ receiverId, transactionId }) {
         </div>
       )}
 
-      {/* ✉️ Πεδίο αποστολής */}
+      {/* Πεδίο αποστολής */}
       <form onSubmit={handleSend} style={styles.inputBox}>
         <input
           type="text"
@@ -130,7 +137,7 @@ export default function ChatBox({ receiverId, transactionId }) {
           style={styles.input}
         />
         <button type="submit" style={styles.sendBtn}>
-          ➤
+          <FaPaperPlane/>
         </button>
       </form>
     </div>
@@ -142,22 +149,24 @@ const styles = {
     background: "#fff",
     borderRadius: "10px",
     padding: "15px",
-    maxWidth: "600px",
-    margin: "20px auto",
     display: "flex",
     flexDirection: "column",
+    flex: 1, 
+    minHeight: 0, 
   },
+
   messagesBox: {
     display: "flex",
     flexDirection: "column",
     gap: "8px",
-    maxHeight: "400px",
-    overflowY: "auto",
+    flex: 1, 
+    overflowY: "auto", 
     padding: "10px",
     border: "1px solid #ccc",
     borderRadius: "8px",
     background: "#f9f9f9",
   },
+
   message: {
     padding: "8px 12px",
     borderRadius: "10px",

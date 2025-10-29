@@ -1,3 +1,18 @@
+html, body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  overflow-x: hidden; /* ✅ απενεργοποιεί κάθε οριζόντιο scroll */
+  box-sizing: border-box;
+  background-color: #f0f4ff; /* προαιρετικό για σταθερό φόντο */
+}
+
+#root {
+  width: 100%;
+  overflow-x: hidden;
+}
+
+
 :root {
   font-family: system-ui, Avenir, Helvetica, Arial, sans-serif;
   line-height: 1.5;

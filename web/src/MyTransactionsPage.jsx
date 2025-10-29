@@ -5,6 +5,28 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useAuth } from "./context/AuthContext";
 import ChatBox from "./ChatBox";
 import MapSelector from "./MapSelector";
+import {
+  FaArrowRight,
+  FaArrowLeft,
+  FaExchangeAlt,
+  FaHandHoldingHeart,
+  FaClock,
+  FaCheck,
+  FaCheckCircle,
+  FaTimesCircle,
+  FaComments,
+  FaMapMarkerAlt,
+  FaTruck,
+  FaUndo,
+  FaHistory,
+  FaUser,
+  FaStar,
+  FaTimes,
+  FaGift,
+  FaFlagCheckered,
+  FaFileAlt,
+  FaHourglassHalf,
+} from "react-icons/fa";
 
 /**
  * MyTransactionsPage
@@ -68,7 +90,7 @@ export default function MyTransactionsPage() {
           body: JSON.stringify({ meeting_lat: lat, meeting_lng: lng }),
         }
       );
-      toast.success("📍 Η τοποθεσία προτάθηκε με επιτυχία!");
+      toast.success("Η τοποθεσία προτάθηκε με επιτυχία!");
       setShowMapModal(false);
       setSelectedTxForMap(null);
     } catch (err) {
@@ -84,7 +106,7 @@ export default function MyTransactionsPage() {
         { method: "POST" }
       );
       if (!res.ok) throw new Error();
-      toast.success("📦 Επιβεβαιώθηκε η αποστολή!");
+      toast.success("Επιβεβαιώθηκε η αποστολή!");
       fetchTransactions();
     } catch {
       toast.error("⚠️ Σφάλμα κατά την επιβεβαίωση αποστολής");
@@ -99,7 +121,7 @@ export default function MyTransactionsPage() {
         { method: "POST" }
       );
       if (!res.ok) throw new Error();
-      toast.success("📦 Επιβεβαιώθηκε η παραλαβή!");
+      toast.success("Επιβεβαιώθηκε η παραλαβή!");
       fetchTransactions();
     } catch {
       toast.error("⚠️ Σφάλμα κατά την επιβεβαίωση παραλαβής");
@@ -112,7 +134,7 @@ export default function MyTransactionsPage() {
     setLoading(true);
 
     try {
-      // Αν δεν έχει δοθεί URL (π.χ. από pagination), φτιάξε το endpoint με βάση το subTab
+      // Αν δεν έχει δοθεί URL (π.χ. από pagination), φτιάχνει το endpoint με βάση το subTab
       let endpoint = url;
       if (!endpoint) {
         const base = "http://localhost:8000/api/transactions/";
@@ -128,7 +150,16 @@ export default function MyTransactionsPage() {
       const data = await res.json();
 
       // Ανταπόκριση pagination (DRF)
-      setTransactions(Array.isArray(data) ? data : data.results || []);
+      let txList = Array.isArray(data) ? data : data.results || [];
+
+      // Φιλτράρισμα μόνο για το ιστορικό
+      if (type === "history") {
+        txList = txList.filter(
+          (tx) => tx.status === "completed" || tx.status === "rejected"
+        );
+      }
+
+      setTransactions(txList);
       setNextPage(data.next || null);
       setPrevPage(data.previous || null);
       setError(null);
@@ -170,10 +201,10 @@ export default function MyTransactionsPage() {
       const receiverId =
         tx.owner?.id === user?.id ? tx.requester?.id : tx.owner?.id;
 
-      console.log("💬 Άνοιγμα chat για:", tx.id, "receiver:", receiverId);
+      console.log("Άνοιγμα chat για:", tx.id, "receiver:", receiverId);
 
       setActiveChat({ transactionId: tx.id, receiverId });
-      toast.success(`💬 Άνοιξε η συνομιλία για τη συναλλαγή #${tx.id}`);
+      toast.success(`Άνοιξε η συνομιλία για τη συναλλαγή #${tx.id}`);
       setPendingChatId(null);
     } else {
       console.warn("⚠️ Δεν βρέθηκε συναλλαγή με ID:", pendingChatId);
@@ -203,7 +234,7 @@ export default function MyTransactionsPage() {
       const body = { status: "accepted" };
 
       if (tx.transaction_type === "loan") {
-        // Πάρε ημερομηνίες από το state ή από το ίδιο το αντικείμενο
+        // Παίρνει ημερομηνίες από το state ή από το ίδιο το αντικείμενο
         const dates = loanDates[tx.id] || {};
         const start = dates.start_date || tx.start_date;
         const end = dates.end_date || tx.end_date;
@@ -243,7 +274,7 @@ export default function MyTransactionsPage() {
         }
       );
       if (!res.ok) throw new Error("Αποτυχία απόρριψης");
-      toast("❌ Η αίτηση απορρίφθηκε");
+      toast("Η αίτηση απορρίφθηκε");
       fetchTransactions();
     } catch {
       toast.error("⚠️ Σφάλμα απόρριψης");
@@ -268,12 +299,12 @@ export default function MyTransactionsPage() {
         }
       );
       if (!res.ok) throw new Error("Αποτυχία επιλογής αντικειμένου");
-      toast.success("🎁 Επιλέχθηκε αντικείμενο για ανταλλαγή");
+      toast.success("Επιλέχθηκε αντικείμενο για ανταλλαγή");
       setExchangeModalOpen(false);
       setExchangeModalTx(null);
       fetchTransactions();
     } catch {
-      toast.error("⚠️ Σφάλμα επιλογής αντικειμένου");
+      toast.error("Σφάλμα επιλογής αντικειμένου");
     }
   };
 
@@ -315,7 +346,7 @@ export default function MyTransactionsPage() {
         { method: "POST" }
       );
       if (!res.ok) throw new Error("Αποτυχία δήλωσης επιστροφής");
-      toast("↩️ Δήλωσες επιστροφή");
+      toast("Δήλωσες επιστροφή");
       fetchTransactions();
     } catch {
       toast.error("⚠️ Σφάλμα δήλωσης επιστροφής");
@@ -333,7 +364,7 @@ export default function MyTransactionsPage() {
         { method: "POST" }
       );
       if (!res.ok) throw new Error("Αποτυχία ολοκλήρωσης");
-      toast.success("🏁 Η συναλλαγή ολοκληρώθηκε");
+      toast.success("Η συναλλαγή ολοκληρώθηκε");
       fetchTransactions();
     } catch {
       toast.error("⚠️ Σφάλμα ολοκλήρωσης");
@@ -380,36 +411,40 @@ export default function MyTransactionsPage() {
 
   return (
     <div style={styles.container}>
-      <h1>📬 Οι συναλλαγές μου</h1>
+      {/* --- Header Section --- */}
+      <div style={styles.headerBar}>
+        <h1 style={styles.pageTitle}>
+          <FaHistory /> Οι συναλλαγές μου
+        </h1>
 
-      {/* Tabs */}
-      <div style={styles.tabContainer}>
-        <button
-          style={activeTab === "active" ? styles.activeTab : styles.tab}
-          onClick={() => setActiveTab("active")}
-        >
-          ⚙️ Ενεργές
-        </button>
-        <button
-          style={activeTab === "history" ? styles.activeTab : styles.tab}
-          onClick={() => setActiveTab("history")}
-        >
-          🏁 Ολοκληρωμένες / Απορριφθείσες
-        </button>
-      </div>
+        <div style={styles.mainTabs}>
+          <button
+            style={
+              activeTab === "active" ? styles.activeMainTab : styles.mainTab
+            }
+            onClick={() => setActiveTab("active")}
+          >
+            <FaClock /> Ενεργές
+          </button>
+          <button
+            style={
+              activeTab === "history" ? styles.activeMainTab : styles.mainTab
+            }
+            onClick={() => setActiveTab("history")}
+          >
+            <FaCheckCircle /> Ολοκληρωμένες / Απορριφθείσες
+          </button>
+        </div>
 
-      {/* Ενεργές */}
-      {activeTab === "active" && (
-        <>
-          {/* Εσωτερικά tabs */}
-          <div style={styles.subTabContainer}>
+        {activeTab === "active" && (
+          <div style={styles.subTabs}>
             <button
               style={
                 subTab === "incoming" ? styles.activeSubTab : styles.subTab
               }
               onClick={() => setSubTab("incoming")}
             >
-              📥 Εισερχόμενα
+              <FaUser /> Εισερχόμενα
             </button>
             <button
               style={
@@ -417,10 +452,15 @@ export default function MyTransactionsPage() {
               }
               onClick={() => setSubTab("outgoing")}
             >
-              📤 Εξερχόμενα
+              <FaExchangeAlt /> Εξερχόμενα
             </button>
           </div>
+        )}
+      </div>
 
+      {/* Ενεργές */}
+      {activeTab === "active" && (
+        <>
           {/* Εισερχόμενα */}
           {subTab === "incoming" && (
             <section style={styles.section}>
@@ -449,8 +489,8 @@ export default function MyTransactionsPage() {
                     localCompleted={localCompleted}
                     onMarkShipped={() => handleMarkShipped(tx.id)}
                     onMarkReceived={() => handleMarkReceived(tx.id)}
-                    showMeetingLocationIds={showMeetingLocationIds} 
-                    setShowMeetingLocationIds={setShowMeetingLocationIds} 
+                    showMeetingLocationIds={showMeetingLocationIds}
+                    setShowMeetingLocationIds={setShowMeetingLocationIds}
                   />
                 ))
               )}
@@ -480,8 +520,8 @@ export default function MyTransactionsPage() {
                     setShowMapModal={setShowMapModal}
                     onMarkReceived={() => handleMarkReceived(tx.id)}
                     onMarkShipped={() => handleMarkShipped(tx.id)}
-                    showMeetingLocationIds={showMeetingLocationIds} 
-                    setShowMeetingLocationIds={setShowMeetingLocationIds} 
+                    showMeetingLocationIds={showMeetingLocationIds}
+                    setShowMeetingLocationIds={setShowMeetingLocationIds}
                   />
                 ))
               )}
@@ -499,7 +539,9 @@ export default function MyTransactionsPage() {
       {/* Ιστορικό */}
       {activeTab === "history" && (
         <section style={styles.section}>
-          <h2>🏁 Ολοκληρωμένες / Απορριφθείσες</h2>
+          <h2>
+            <FaCheckCircle /> Ολοκληρωμένες / Απορριφθείσες
+          </h2>
 
           {transactions.length === 0 ? (
             <p>Δεν υπάρχουν ολοκληρωμένες ή απορριφθείσες συναλλαγές.</p>
@@ -507,36 +549,192 @@ export default function MyTransactionsPage() {
             <>
               {transactions.map((tx) => (
                 <div key={tx.id} style={styles.card}>
-                  <p>
-                    <strong>Αντικείμενο:</strong>{" "}
-                    {tx.item ? (
-                      <Link to={`/items/${tx.item}`} style={styles.link}>
-                        {tx.item_title}
-                      </Link>
-                    ) : (
-                      "(χωρίς τίτλο)"
-                    )}
-                  </p>
+                  {/* Ανταλλαγή ή Κανονικό αντικείμενο */}
+                  {tx.transaction_type === "exchange" ? (
+                    <div
+                      style={{
+                        background: "rgba(0, 123, 255, 0.05)",
+                        border: "1px solid rgba(0,123,255,0.2)",
+                        borderRadius: "10px",
+                        padding: "10px 14px",
+                        marginTop: "8px",
+                        lineHeight: "1.6",
+                      }}
+                    >
+                      {/* Γραμμή: Ανταλλαγή με χρήστη */}
+                      <p style={{ margin: 0 }}>
+                        <FaExchangeAlt color="#007bff" /> Ανταλλαγή με χρήστη{" "}
+                        <Link
+                          to={`/profile/${
+                            tx.requester?.username === user?.username
+                              ? tx.owner?.id
+                              : tx.requester?.id
+                          }`}
+                          style={styles.link}
+                        >
+                          {tx.requester?.username === user?.username
+                            ? tx.owner?.username
+                            : tx.requester?.username}
+                        </Link>
+                      </p>
+
+                      {/* Γραμμή: ο χρήστης έδωσε / έλαβε */}
+                      <p style={{ margin: "6px 0 0 0" }}>
+                        {tx.requester?.username === user?.username ? (
+                          <>
+                            <strong>{user.username}</strong> έδωσε{" "}
+                            {tx.requested_item ? (
+                              <Link
+                                to={`/items/${tx.requested_item}`}
+                                style={{
+                                  ...styles.link,
+                                  color: "#007bff",
+                                  fontWeight: 500,
+                                }}
+                              >
+                                {tx.requested_item_title || "—"}
+                              </Link>
+                            ) : (
+                              <span style={{ color: "#007bff" }}>
+                                {tx.requested_item_title || "—"}
+                              </span>
+                            )}
+                            , έλαβε{" "}
+                            {tx.item ? (
+                              <Link
+                                to={`/items/${tx.item}`}
+                                style={{
+                                  ...styles.link,
+                                  color: "#28a745",
+                                  fontWeight: 500,
+                                }}
+                              >
+                                {tx.item_title || "—"}
+                              </Link>
+                            ) : (
+                              <span style={{ color: "#28a745" }}>
+                                {tx.item_title || "—"}
+                              </span>
+                            )}
+                          </>
+                        ) : (
+                          <>
+                            <strong>{user.username}</strong> έδωσε{" "}
+                            {tx.item ? (
+                              <Link
+                                to={`/items/${tx.item}`}
+                                style={{
+                                  ...styles.link,
+                                  color: "#007bff",
+                                  fontWeight: 500,
+                                }}
+                              >
+                                {tx.item_title || "—"}
+                              </Link>
+                            ) : (
+                              <span style={{ color: "#007bff" }}>
+                                {tx.item_title || "—"}
+                              </span>
+                            )}
+                            , έλαβε{" "}
+                            {tx.requested_item ? (
+                              <Link
+                                to={`/items/${tx.requested_item}`}
+                                style={{
+                                  ...styles.link,
+                                  color: "#28a745",
+                                  fontWeight: 500,
+                                }}
+                              >
+                                {tx.requested_item_title || "—"}
+                              </Link>
+                            ) : (
+                              <span style={{ color: "#28a745" }}>
+                                {tx.requested_item_title || "—"}
+                              </span>
+                            )}
+                          </>
+                        )}
+                      </p>
+
+                      {/* Ημερομηνία ολοκλήρωσης */}
+                      {tx.end_date && (
+                        <p style={{ marginTop: "8px", color: "#555" }}>
+                          <FaClock
+                            style={{ marginRight: "6px", color: "#007bff" }}
+                          />
+                          Ολοκληρώθηκε στις{" "}
+                          <strong>
+                            {new Date(tx.end_date).toLocaleDateString("el-GR", {
+                              day: "2-digit",
+                              month: "2-digit",
+                              year: "numeric",
+                            })}
+                          </strong>
+                        </p>
+                      )}
+                    </div>
+                  ) : (
+                    <>
+                      <p>
+                        <strong>Αντικείμενο:</strong>{" "}
+                        {tx.item ? (
+                          <Link to={`/items/${tx.item}`} style={styles.link}>
+                            {tx.item_title}
+                          </Link>
+                        ) : (
+                          "(χωρίς τίτλο)"
+                        )}
+                      </p>
+
+                      {/* Από / Προς μόνο για δανεισμό (clickable users) */}
+                      {tx.transaction_type === "loan" && (
+                        <p>
+                          <strong>Από:</strong>{" "}
+                          <Link
+                            to={`/profile/${tx.owner?.id}`}
+                            style={{ ...styles.link, fontWeight: 500 }}
+                          >
+                            {tx.owner?.username}
+                          </Link>{" "}
+                          → <strong>Προς:</strong>{" "}
+                          <Link
+                            to={`/profile/${tx.requester?.id}`}
+                            style={{ ...styles.link, fontWeight: 500 }}
+                          >
+                            {tx.requester?.username}
+                          </Link>
+                        </p>
+                      )}
+                    </>
+                  )}
+
                   <p>
                     <strong>Κατάσταση:</strong> {renderStatus(tx.status)}
                   </p>
+
                   <p>
-                    <strong>Από:</strong> {tx.requester?.username} →{" "}
-                    <strong>Προς:</strong> {tx.owner?.username}
+                    <strong>Τύπος συναλλαγής:</strong>{" "}
+                    {renderType(tx.transaction_type)}
                   </p>
 
                   {/* Απόσταση μεταξύ χρηστών */}
-                  {tx.distance_km !== null && tx.distance_km !== undefined ? (
-                    <p style={{ color: "#555", marginTop: "4px" }}>
-                      📍 Απόσταση μεταξύ χρηστών:{" "}
-                      <strong style={{ color: "#007bff" }}>
-                        {tx.distance_km} km
-                      </strong>
-                    </p>
-                  ) : (
-                    <p style={{ color: "#999", marginTop: "4px" }}>
-                      📍 Απόσταση: <em>—</em>
-                    </p>
+                  {tx.status !== "completed" && tx.status !== "rejected" && (
+                    <>
+                      {tx.distance_km !== null &&
+                      tx.distance_km !== undefined ? (
+                        <p style={{ color: "#555", marginTop: "4px" }}>
+                          <FaMapMarkerAlt /> Απόσταση μεταξύ χρηστών:{" "}
+                          <strong style={{ color: "#007bff" }}>
+                            {tx.distance_km} km
+                          </strong>
+                        </p>
+                      ) : (
+                        <p style={{ color: "#999", marginTop: "4px" }}>
+                          <FaMapMarkerAlt /> Απόσταση: <em>—</em>
+                        </p>
+                      )}
+                    </>
                   )}
 
                   {tx.end_date && (
@@ -548,10 +746,13 @@ export default function MyTransactionsPage() {
 
                   {tx.reviews && tx.reviews.length > 0 ? (
                     <div style={styles.reviewBox}>
-                      <p>⭐ {tx.reviews[0].rating}/5</p>
+                      <p>
+                        <FaStar color="#ffc107" style={{ marginRight: 4 }} />{" "}
+                        {tx.reviews[0].rating}/5
+                      </p>
                       {tx.reviews[0].comment && (
                         <p>
-                          💬 <em>{tx.reviews[0].comment}</em>
+                          <FaComments /> <em>{tx.reviews[0].comment}</em>
                         </p>
                       )}
                     </div>
@@ -570,7 +771,7 @@ export default function MyTransactionsPage() {
                         );
                       }}
                     >
-                      ✨ Αξιολόγηση
+                      <FaStar /> Αξιολόγηση
                     </button>
                   ) : null}
                 </div>
@@ -599,12 +800,14 @@ export default function MyTransactionsPage() {
             style={styles.chatPopup}
           >
             <div style={styles.chatHeader}>
-              <span>💬 Συναλλαγή #{activeChat.transactionId}</span>
+              <span>
+                <FaComments /> Συναλλαγή #{activeChat.transactionId}
+              </span>
               <button
                 onClick={() => setActiveChat(null)}
                 style={styles.closeChatButton}
               >
-                ❌
+                <FaTimesCircle />
               </button>
             </div>
             <ChatBox
@@ -619,7 +822,7 @@ export default function MyTransactionsPage() {
       {selectedTransaction && (
         <div style={styles.reviewFormContainer}>
           <h3>
-            ✨ Αξιολόγηση συναλλαγής #{selectedTransaction.id} (
+            <FaStar /> Αξιολόγηση συναλλαγής #{selectedTransaction.id} (
             {selectedTransaction.item_title})
           </h3>
           <form onSubmit={handleSubmitReview} style={styles.form}>
@@ -631,7 +834,7 @@ export default function MyTransactionsPage() {
             >
               {[5, 4, 3, 2, 1].map((r) => (
                 <option key={r} value={r}>
-                  {r} ⭐
+                  {r} <FaStar color="#ffc107" style={{ marginRight: 4 }} />
                 </option>
               ))}
             </select>
@@ -646,14 +849,14 @@ export default function MyTransactionsPage() {
 
             <div style={{ display: "flex", gap: "10px" }}>
               <button type="submit" style={styles.submitButton}>
-                ✅ Υποβολή
+                <FaCheckCircle style={{ color: "#28a745", fontSize: "24px" }} /> Υποβολή
               </button>
               <button
                 type="button"
                 style={styles.cancelButton}
                 onClick={() => setSelectedTransaction(null)}
               >
-                ❌ Άκυρο
+                <FaTimesCircle /> Άκυρο
               </button>
             </div>
           </form>
@@ -684,7 +887,7 @@ export default function MyTransactionsPage() {
             >
               <div style={styles.modalHeader}>
                 <h3 style={{ margin: 0 }}>
-                  🎁 Επιλογή αντικειμένου από{" "}
+                  <FaExchangeAlt color="#007bff" /> Επιλογή αντικειμένου από{" "}
                   {exchangeModalTx.requester?.username}
                 </h3>
                 <button
@@ -729,7 +932,7 @@ export default function MyTransactionsPage() {
                               )
                             }
                           >
-                            ✅ Επιλογή
+                            <FaCheckCircle style={{ color: "#28a745", fontSize: "24px" }} /> Επιλογή
                           </button>
                         </div>
                       ))}
@@ -745,7 +948,9 @@ export default function MyTransactionsPage() {
       {showMapModal && selectedTxForMap && (
         <div style={styles.modalOverlay}>
           <div style={styles.modalContent}>
-            <h3>📍 Τοποθεσία συνάντησης</h3>
+            <h3>
+              <FaMapMarkerAlt /> Τοποθεσία συνάντησης
+            </h3>
 
             <MapSelector
               tx={selectedTxForMap}
@@ -764,8 +969,8 @@ export default function MyTransactionsPage() {
                   toast.success(
                     "✅ Η τοποθεσία αποθηκεύτηκε και στάλθηκε ειδοποίηση!"
                   );
-                  setSelectedTxForMap(updated); // ενημέρωσε local state
-                  fetchTransactions(); // ανανέωσε λίστα
+                  setSelectedTxForMap(updated); // ενημερώνει local state
+                  fetchTransactions(); // ανανεώνει λίστα
                 } catch {
                   toast.error("⚠️ Σφάλμα αποθήκευσης τοποθεσίας");
                 }
@@ -776,7 +981,7 @@ export default function MyTransactionsPage() {
               style={styles.closeChatButton}
               onClick={() => setShowMapModal(false)}
             >
-              ❌ Κλείσιμο
+              Κλείσιμο
             </button>
           </div>
         </div>
@@ -823,13 +1028,14 @@ function TransactionCard({
       {!isExpanded && (
         <div>
           <p>
-            👤{" "}
+            <FaUser />{" "}
             <Link to={`/profile/${tx.requester?.id}`} style={styles.link}>
               {tx.requester?.username}
             </Link>
           </p>
           <p>
-            🎁 {tx.item_title} — {renderType(tx.transaction_type)}
+            <FaExchangeAlt color="#007bff" /> {tx.item_title} —{" "}
+            {renderType(tx.transaction_type)}
           </p>
         </div>
       )}
@@ -869,7 +1075,8 @@ function TransactionCard({
             >
               <div style={{ flex: 1, textAlign: "center" }}>
                 <p style={{ margin: 0 }}>
-                  🎁 <strong>{tx.item_title}</strong>
+                  <FaHandHoldingHeart color="#28a745" />{" "}
+                  <strong>{tx.item_title}</strong>
                 </p>
                 <p style={{ margin: 0, fontSize: "0.9em", color: "#555" }}>
                   του {tx.owner?.username}
@@ -880,7 +1087,8 @@ function TransactionCard({
 
               <div style={{ flex: 1, textAlign: "center" }}>
                 <p style={{ margin: 0 }}>
-                  🎁 <strong>{tx.requested_item_title}</strong>
+                  <FaHandHoldingHeart color="#28a745" />{" "}
+                  <strong>{tx.requested_item_title}</strong>
                 </p>
                 <p style={{ margin: 0, fontSize: "0.9em", color: "#555" }}>
                   του {tx.requester?.username}
@@ -905,14 +1113,14 @@ function TransactionCard({
                 }}
               >
                 {showMeetingLocationIds.has(tx.id)
-                  ? "❌ Απόκρυψη τοποθεσίας"
-                  : "📍 Εμφάνιση τοποθεσίας συνάντησης"}
+                  ? " Απόκρυψη τοποθεσίας"
+                  : " Εμφάνιση τοποθεσίας συνάντησης"}
               </button>
 
               {showMeetingLocationIds.has(tx.id) && (
                 <div style={{ marginTop: "10px" }}>
                   <p style={{ color: "#007bff", marginBottom: "8px" }}>
-                    📍 <strong>Τοποθεσία συνάντησης:</strong>{" "}
+                    <FaMapMarkerAlt /> <strong>Τοποθεσία συνάντησης:</strong>{" "}
                     {tx.meeting_address
                       ? tx.meeting_address
                       : `(${tx.meeting_lat.toFixed(
@@ -939,11 +1147,11 @@ function TransactionCard({
             <p>
               <strong>Τρόπος Παράδοσης:</strong>{" "}
               {tx.delivery_method === "in_person"
-                ? "🤝 Χέρι με χέρι"
+                ? " Χέρι με χέρι"
                 : tx.delivery_method === "pickup_point"
-                ? "📍 Σημείο συνάντησης"
+                ? " Σημείο συνάντησης"
                 : tx.delivery_method === "shipping"
-                ? "📦 Αποστολή με courier"
+                ? " Αποστολή με courier"
                 : "—"}
             </p>
           )}
@@ -959,13 +1167,13 @@ function TransactionCard({
                 setShowMapModal(true);
               }}
             >
-              📍 Επιλογή Τοποθεσίας
+              <FaMapMarkerAlt /> Επιλογή Τοποθεσίας
             </button>
           )}
 
           {tx.distance_km !== null && (
             <p style={{ color: "#555" }}>
-              📍 Απόσταση:{" "}
+              <FaMapMarkerAlt /> Απόσταση:{" "}
               <strong style={{ color: "#007bff" }}>{tx.distance_km} km</strong>
             </p>
           )}
@@ -980,7 +1188,7 @@ function TransactionCard({
               });
             }}
           >
-            💬 Συνομιλία
+            <FaComments /> Συνομιλία
           </button>
 
           {isOwner && (
@@ -1026,15 +1234,13 @@ function TransactionCard({
                         tx.transaction_type === "exchange" &&
                         !tx.requested_item
                       ) {
-                        toast.error(
-                          "🎁 Επίλεξε πρώτα αντικείμενο για ανταλλαγή!"
-                        );
+                        toast.error("Επίλεξε πρώτα αντικείμενο για ανταλλαγή!");
                         return;
                       }
                       onAccept();
                     }}
                   >
-                    ✅ Αποδοχή
+                    <FaCheckCircle style={{ color: "#28a745", fontSize: "24px" }} /> Αποδοχή
                   </button>
 
                   <button
@@ -1044,7 +1250,7 @@ function TransactionCard({
                       onReject();
                     }}
                   >
-                    ❌ Απόρριψη
+                    <FaTimesCircle /> Απόρριψη
                   </button>
 
                   {tx.transaction_type === "exchange" && (
@@ -1055,7 +1261,8 @@ function TransactionCard({
                         onOpenSelect();
                       }}
                     >
-                      🎁 Επιλογή αντικειμένου
+                      <FaHandHoldingHeart color="#28a745" /> Επιλογή
+                      αντικειμένου
                     </button>
                   )}
                 </>
@@ -1074,11 +1281,11 @@ function TransactionCard({
                           onMarkShipped(tx.id);
                         }}
                       >
-                        📦 Επιβεβαίωση αποστολής
+                        <FaTruck /> Επιβεβαίωση αποστολής
                       </button>
                     ) : (
                       <p style={{ color: "#28a745" }}>
-                        ✅ Έχεις επιβεβαιώσει αποστολή
+                        <FaCheckCircle style={{ color: "#28a745", fontSize: "24px" }} /> Έχεις επιβεβαιώσει αποστολή
                       </p>
                     )}
                   </div>
@@ -1096,11 +1303,11 @@ function TransactionCard({
                           onMarkShipped(tx.id);
                         }}
                       >
-                        📦 Επιβεβαίωση αποστολής
+                        <FaTruck /> Επιβεβαίωση αποστολής
                       </button>
                     ) : (
                       <p style={{ color: "#28a745" }}>
-                        ✅ Έχεις επιβεβαιώσει αποστολή
+                        <FaCheckCircle style={{ color: "#28a745", fontSize: "24px" }} /> Έχεις επιβεβαιώσει αποστολή
                       </p>
                     )}
 
@@ -1112,19 +1319,19 @@ function TransactionCard({
                           onMarkReceived(tx.id);
                         }}
                       >
-                        📦 Επιβεβαίωση παραλαβής
+                        <FaTruck /> Επιβεβαίωση παραλαβής
                       </button>
                     )}
 
                     {tx.owner_received && (
                       <p style={{ color: "#28a745" }}>
-                        ✅ Έχεις επιβεβαιώσει παραλαβή
+                        <FaCheckCircle style={{ color: "#28a745", fontSize: "24px" }} /> Έχεις επιβεβαιώσει παραλαβή
                       </p>
                     )}
 
                     {tx.owner_received && tx.requester_received && (
                       <p style={{ color: "#28a745" }}>
-                        🏁 Η ανταλλαγή ολοκληρώθηκε!
+                        Η ανταλλαγή ολοκληρώθηκε!
                       </p>
                     )}
                   </div>
@@ -1143,11 +1350,12 @@ function TransactionCard({
                           onComplete();
                         }}
                       >
-                        🏁 Ολοκλήρωση ανταλλαγής
+                        <FaCheckCircle /> Ολοκλήρωση ανταλλαγής
                       </button>
                     ) : (
                       <p style={{ color: "#999" }}>
-                        🕒 Αναμονή ολοκλήρωσης από τον άλλο χρήστη
+                        <FaHourglassHalf /> Αναμονή ολοκλήρωσης από τον άλλο
+                        χρήστη
                       </p>
                     )}
                   </div>
@@ -1162,7 +1370,7 @@ function TransactionCard({
                     onComplete();
                   }}
                 >
-                  🏁 Επιβεβαίωση & Ολοκλήρωση
+                  <FaCheckCircle /> Επιβεβαίωση & Ολοκλήρωση
                 </button>
               )}
             </div>
@@ -1207,13 +1415,14 @@ function OutgoingCard({
       {!isExpanded && (
         <div>
           <p>
-            👤{" "}
+            <FaUser />{" "}
             <Link to={`/profile/${tx.owner?.id}`} style={styles.link}>
               {tx.owner?.username}
             </Link>
           </p>
           <p>
-            🎁 {tx.item_title} — {renderType(tx.transaction_type)}
+            <FaHandHoldingHeart color="#28a745" /> {tx.item_title} —{" "}
+            {renderType(tx.transaction_type)}
           </p>
         </div>
       )}
@@ -1253,7 +1462,8 @@ function OutgoingCard({
             >
               <div style={{ flex: 1, textAlign: "center" }}>
                 <p style={{ margin: 0 }}>
-                  🎁 <strong>{tx.item_title}</strong>
+                  <FaHandHoldingHeart color="#28a745" />{" "}
+                  <strong>{tx.item_title}</strong>
                 </p>
                 <p style={{ margin: 0, fontSize: "0.9em", color: "#555" }}>
                   του {tx.owner?.username}
@@ -1264,7 +1474,8 @@ function OutgoingCard({
 
               <div style={{ flex: 1, textAlign: "center" }}>
                 <p style={{ margin: 0 }}>
-                  🎁 <strong>{tx.requested_item_title}</strong>
+                  <FaHandHoldingHeart color="#e81111ff" />{" "}
+                  <strong>{tx.requested_item_title}</strong>
                 </p>
                 <p style={{ margin: 0, fontSize: "0.9em", color: "#555" }}>
                   του {tx.requester?.username}
@@ -1297,14 +1508,14 @@ function OutgoingCard({
                 }}
               >
                 {showMeetingLocationIds.has(tx.id)
-                  ? "❌ Απόκρυψη τοποθεσίας"
-                  : "📍 Εμφάνιση τοποθεσίας συνάντησης"}
+                  ? " Απόκρυψη τοποθεσίας"
+                  : " Εμφάνιση τοποθεσίας συνάντησης"}
               </button>
 
               {showMeetingLocationIds.has(tx.id) && (
                 <div style={{ marginTop: "10px" }}>
                   <p style={{ color: "#007bff", marginBottom: "8px" }}>
-                    📍 <strong>Τοποθεσία συνάντησης:</strong>{" "}
+                    <FaMapMarkerAlt /> <strong>Τοποθεσία συνάντησης:</strong>{" "}
                     {tx.meeting_address
                       ? tx.meeting_address
                       : `(${tx.meeting_lat.toFixed(
@@ -1338,13 +1549,13 @@ function OutgoingCard({
                 setShowMapModal(true);
               }}
             >
-              📍 Επιλογή Τοποθεσίας
+              <FaMapMarkerAlt /> Επιλογή Τοποθεσίας
             </button>
           )}
 
           {tx.distance_km !== null && (
             <p style={{ color: "#555" }}>
-              📍 Απόσταση:{" "}
+              <FaMapMarkerAlt /> Απόσταση:{" "}
               <strong style={{ color: "#007bff" }}>{tx.distance_km} km</strong>
             </p>
           )}
@@ -1359,7 +1570,7 @@ function OutgoingCard({
               });
             }}
           >
-            💬 Συνομιλία
+            <FaComments /> Συνομιλία
           </button>
 
           {isRequester && (
@@ -1383,7 +1594,7 @@ function OutgoingCard({
                           onConfirmExchange();
                         }}
                       >
-                        🔁 Επιβεβαίωση ανταλλαγής
+                        <FaExchangeAlt /> Επιβεβαίωση ανταλλαγής
                       </button>
                       <button
                         style={styles.dangerBtn}
@@ -1392,7 +1603,7 @@ function OutgoingCard({
                           onRejectExchange();
                         }}
                       >
-                        🚫 Απόρριψη
+                        <FaTimes /> Απόρριψη
                       </button>
                     </>
                   )}
@@ -1403,7 +1614,8 @@ function OutgoingCard({
                     <div style={{ marginTop: "10px" }}>
                       {!tx.owner_shipped && (
                         <p style={{ color: "#999" }}>
-                          🕒 Αναμονή αποστολής από τον ιδιοκτήτη
+                          <FaHourglassHalf /> Αναμονή αποστολής από τον
+                          ιδιοκτήτη
                         </p>
                       )}
                       {tx.owner_shipped && !tx.requester_received && (
@@ -1414,12 +1626,12 @@ function OutgoingCard({
                             onMarkReceived();
                           }}
                         >
-                          📦 Επιβεβαίωση παραλαβής
+                          <FaTruck /> Επιβεβαίωση παραλαβής
                         </button>
                       )}
                       {tx.requester_received && (
                         <p style={{ color: "#28a745" }}>
-                          ✅ Έχεις επιβεβαιώσει παραλαβή
+                          <FaCheckCircle style={{ color: "#28a745", fontSize: "24px" }} /> Έχεις επιβεβαιώσει παραλαβή
                         </p>
                       )}
                       {tx.requester_received && (
@@ -1430,12 +1642,12 @@ function OutgoingCard({
                             onReturnLoan();
                           }}
                         >
-                          ↩️ Δήλωση επιστροφής
+                          <FaUndo /> Δήλωση επιστροφής
                         </button>
                       )}
                       {tx.owner_shipped && tx.requester_received && (
                         <p style={{ color: "#28a745" }}>
-                          🏁 Η συναλλαγή ολοκληρώθηκε!
+                          <FaCheckCircle /> Η συναλλαγή ολοκληρώθηκε!
                         </p>
                       )}
                     </div>
@@ -1454,11 +1666,11 @@ function OutgoingCard({
                             onMarkShipped(tx.id);
                           }}
                         >
-                          📦 Επιβεβαίωση αποστολής
+                          <FaTruck /> Επιβεβαίωση αποστολής
                         </button>
                       ) : (
                         <p style={{ color: "#28a745" }}>
-                          ✅ Έχεις επιβεβαιώσει αποστολή
+                          <FaCheckCircle style={{ color: "#28a745", fontSize: "24px" }} /> Έχεις επιβεβαιώσει αποστολή
                         </p>
                       )}
 
@@ -1470,19 +1682,19 @@ function OutgoingCard({
                             onMarkReceived(tx.id);
                           }}
                         >
-                          📦 Επιβεβαίωση παραλαβής
+                          <FaTruck /> Επιβεβαίωση παραλαβής
                         </button>
                       )}
 
                       {tx.requester_received && (
                         <p style={{ color: "#28a745" }}>
-                          ✅ Έχεις επιβεβαιώσει παραλαβή
+                          <FaCheckCircle style={{ color: "#28a745", fontSize: "24px" }} /> Έχεις επιβεβαιώσει παραλαβή
                         </p>
                       )}
 
                       {tx.owner_received && tx.requester_received && (
                         <p style={{ color: "#28a745" }}>
-                          🏁 Η ανταλλαγή ολοκληρώθηκε!
+                          <FaCheckCircle /> Η ανταλλαγή ολοκληρώθηκε!
                         </p>
                       )}
                     </div>
@@ -1501,11 +1713,12 @@ function OutgoingCard({
                             onComplete();
                           }}
                         >
-                          🏁 Ολοκλήρωση ανταλλαγής
+                          <FaCheckCircle /> Ολοκλήρωση ανταλλαγής
                         </button>
                       ) : (
                         <p style={{ color: "#999" }}>
-                          🕒 Αναμονή ολοκλήρωσης από τον άλλο χρήστη
+                          <FaHourglassHalf /> Αναμονή ολοκλήρωσης από τον άλλο
+                          χρήστη
                         </p>
                       )}
                     </div>
@@ -1521,21 +1734,69 @@ function OutgoingCard({
 
 /* ---------------------- Helpers & Styling ---------------------- */
 function renderStatus(status) {
+  const baseStyle = {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: "6px",
+  };
+
   switch (status) {
     case "pending":
-      return "⏳ Σε εκκρεμότητα";
+      return (
+        <span style={baseStyle}>
+          <FaHourglassHalf color="#f0ad4e" />
+          Σε εκκρεμότητα
+        </span>
+      );
+
     case "pending_confirmation":
-      return "🕒 Αναμένει επιβεβαίωση";
+      return (
+        <span style={baseStyle}>
+          <FaClock color="#ffc107" />
+          Αναμένει επιβεβαίωση
+        </span>
+      );
+
     case "pending_terms":
-      return "📄 Αναμένει όρους";
+      return (
+        <span style={baseStyle}>
+          <FaFileAlt color="#17a2b8" />
+          Αναμένει όρους
+        </span>
+      );
+
     case "accepted":
-      return "✅ Ενεργή";
+      return (
+        <span style={baseStyle}>
+          <FaCheckCircle color="#28a745" />
+          Ενεργή
+        </span>
+      );
+
     case "returned_by_requester":
-      return "↩️ Δηλώθηκε επιστροφή";
+      return (
+        <span style={baseStyle}>
+          <FaUndo color="#007bff" />
+          Δηλώθηκε επιστροφή
+        </span>
+      );
+
     case "rejected":
-      return "❌ Απορριφθείσα";
+      return (
+        <span style={baseStyle}>
+          <FaTimesCircle color="#dc3545" />
+          Απορριφθείσα
+        </span>
+      );
+
     case "completed":
-      return "🏁 Ολοκληρωμένη";
+      return (
+        <span style={baseStyle}>
+          <FaFlagCheckered color="#007bff" />
+          Ολοκληρωμένη
+        </span>
+      );
+
     default:
       return status;
   }
@@ -1544,18 +1805,34 @@ function renderStatus(status) {
 function renderType(type) {
   switch (type) {
     case "exchange":
-      return "🔁 Ανταλλαγή";
+      return (
+        <>
+          <FaExchangeAlt color="#007bff" style={{ marginRight: 6 }} />
+          Ανταλλαγή
+        </>
+      );
     case "loan":
-      return "🤝 Δανεισμός";
+      return (
+        <>
+          <FaHandHoldingHeart color="#28a745" style={{ marginRight: 6 }} />
+          Δανεισμός
+        </>
+      );
     case "either":
-      return "🔁🤝 Ανταλλαγή ή Δανεισμός";
+      return (
+        <>
+          <FaExchangeAlt color="#007bff" style={{ marginRight: 4 }} />
+          <FaHandHoldingHeart color="#28a745" style={{ marginRight: 6 }} />
+          Ανταλλαγή ή Δανεισμός
+        </>
+      );
     default:
       return type;
   }
 }
 
 function PaginationControls({ nextPage, prevPage, onPageChange }) {
-  // Αν δεν υπάρχει προηγούμενη ούτε επόμενη → μην εμφανίζεις καθόλου
+  // Αν δεν υπάρχει προηγούμενη ούτε επόμενη → να μην εμφανίζει καθόλου
   if (!nextPage && !prevPage) return null;
 
   return (
@@ -1581,7 +1858,7 @@ function PaginationControls({ nextPage, prevPage, onPageChange }) {
           transition: "opacity 0.2s",
         }}
       >
-        ⬅️ Προηγούμενη
+        <FaArrowLeft color="#eef2f5ff" /> Προηγούμενη
       </button>
 
       <button
@@ -1598,7 +1875,7 @@ function PaginationControls({ nextPage, prevPage, onPageChange }) {
           transition: "opacity 0.2s",
         }}
       >
-        Επόμενη ➡️
+        Επόμενη <FaArrowRight color="#e6eaeeff" />
       </button>
     </div>
   );
@@ -1606,8 +1883,20 @@ function PaginationControls({ nextPage, prevPage, onPageChange }) {
 
 /* Styling */
 const styles = {
-  container: { padding: "20px", maxWidth: "900px", margin: "0 auto" },
-  section: { marginBottom: "30px" },
+  container: {
+    minHeight: "100vh",
+    width: "100%",
+    background:
+      "linear-gradient(180deg, #dce9f9 0%, #dff5ec 50%, #cde3ff 100%)",
+    padding: "60px 5vw",
+    fontFamily: "Inter, sans-serif",
+    color: "#222",
+    overflowX: "hidden",
+    boxSizing: "border-box",
+    scrollbarGutter: "stable",
+    transition: "background 0.3s ease, min-height 0.3s ease",
+    minHeight: "100dvh", 
+  },
   tabContainer: {
     display: "flex",
     justifyContent: "center",
@@ -1631,13 +1920,17 @@ const styles = {
     fontWeight: "bold",
   },
   card: {
-    background: "#f9f9f9",
-    border: "1px solid #ddd",
-    borderRadius: "10px",
-    padding: "15px",
-    marginBottom: "15px",
+    background: "linear-gradient(180deg, #f5fff7 0%, #e3f5ea 100%)",
+    borderRadius: "14px",
+    padding: "18px",
+    boxShadow: "0 4px 16px rgba(0,0,0,0.15)",
+    border: "1.5px solid #a2d2a2",
+    transition: "all 0.3s ease",
     cursor: "pointer",
-    transition: "background 0.2s ease",
+    margin: "0 auto 20px", 
+    width: "100%", 
+    maxWidth: "720px", 
+    color: "#1f3a1f",
   },
 
   link: { color: "#007bff", textDecoration: "none" },
@@ -1814,28 +2107,53 @@ const styles = {
     flexDirection: "column",
     gap: 8,
   },
+  tabContainer: {
+    display: "flex",
+    justifyContent: "center",
+    gap: "12px",
+    marginBottom: "20px",
+  },
+  tab: {
+    background: "#e0e0e0",
+    border: "none",
+    borderRadius: "10px",
+    padding: "10px 18px",
+    cursor: "pointer",
+    display: "flex",
+    alignItems: "center",
+    gap: "6px",
+  },
+  activeTab: {
+    background: "#007bff",
+    color: "white",
+    border: "none",
+    borderRadius: "10px",
+    padding: "10px 18px",
+    cursor: "pointer",
+    display: "flex",
+    alignItems: "center",
+    gap: "6px",
+    boxShadow: "0 3px 8px rgba(0,0,0,0.2)",
+  },
   subTabContainer: {
     display: "flex",
     justifyContent: "center",
-    gap: "10px",
-    marginBottom: "15px",
-    marginTop: "10px",
+    gap: "8px",
+    marginBottom: "20px",
   },
   subTab: {
-    background: "#e0e0e0",
+    background: "#ddd",
     border: "none",
-    padding: "6px 14px",
     borderRadius: "8px",
+    padding: "6px 14px",
     cursor: "pointer",
   },
   activeSubTab: {
     background: "#28a745",
     color: "white",
-    border: "none",
-    padding: "6px 14px",
     borderRadius: "8px",
+    padding: "6px 14px",
     cursor: "pointer",
-    fontWeight: "bold",
   },
   mapButton: {
     background: "#0078d4",
@@ -1845,5 +2163,85 @@ const styles = {
     borderRadius: "6px",
     cursor: "pointer",
     marginTop: "10px",
+    marginRight: "10px", 
+  },
+  headerBar: {
+    background: "rgba(255,255,255,0.6)",
+    backdropFilter: "blur(12px)",
+    borderRadius: "16px",
+    padding: "20px 30px",
+    marginBottom: "30px",
+    boxShadow: "0 4px 16px rgba(0,0,0,0.1)",
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    gap: "16px",
+  },
+
+  pageTitle: {
+    fontSize: "2rem",
+    fontWeight: "700",
+    color: "#1c2a40",
+    display: "flex",
+    alignItems: "center",
+    gap: "10px",
+    margin: 0,
+  },
+
+  mainTabs: {
+    display: "flex",
+    justifyContent: "center",
+    gap: "10px",
+    flexWrap: "wrap",
+  },
+
+  mainTab: {
+    background: "#e5e7eb",
+    color: "#111827",
+    border: "none",
+    padding: "10px 18px",
+    borderRadius: "50px",
+    cursor: "pointer",
+    fontWeight: 500,
+    transition: "all 0.25s ease",
+  },
+
+  activeMainTab: {
+    background: "linear-gradient(90deg,#007bff,#00a8ff)",
+    color: "white",
+    border: "none",
+    padding: "10px 18px",
+    borderRadius: "50px",
+    cursor: "pointer",
+    fontWeight: 600,
+    boxShadow: "0 4px 12px rgba(0,123,255,0.3)",
+  },
+
+  subTabs: {
+    display: "flex",
+    justifyContent: "center",
+    gap: "8px",
+  },
+
+  subTab: {
+    background: "#d1d5db",
+    border: "none",
+    color: "#111827",
+    padding: "8px 14px",
+    borderRadius: "30px",
+    cursor: "pointer",
+    fontWeight: 500,
+    transition: "all 0.25s ease",
+  },
+
+  activeSubTab: {
+    background: "#22c55e",
+    color: "white",
+    border: "none",
+    padding: "8px 14px",
+    borderRadius: "30px",
+    cursor: "pointer",
+    fontWeight: 600,
+    boxShadow: "0 3px 8px rgba(34,197,94,0.3)",
   },
 };

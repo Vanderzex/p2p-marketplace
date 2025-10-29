@@ -2,46 +2,69 @@ import { useEffect, useState } from "react";
 import { useAuth } from "./context/AuthContext";
 import { useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
+import { motion, AnimatePresence } from "framer-motion";
+import {
+  FaBell,
+  FaBellSlash,
+  FaCommentDots,
+  FaExchangeAlt,
+  FaStar,
+  FaBullhorn,
+  FaInbox,
+  FaCheck,
+} from "react-icons/fa";
 
 export default function NotificationsBell() {
   const { token } = useAuth();
   const [notifications, setNotifications] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [unreadMsgs, setUnreadMsgs] = useState(0);
   const [open, setOpen] = useState(false);
+  const [animate, setAnimate] = useState(false);
   const navigate = useNavigate();
 
-  // Ανάκτηση ειδοποιήσεων (πλήθος + λίστα)
   const fetchNotifications = async () => {
     if (!token) return;
     try {
-      // Πλήθος αδιάβαστων
-      const resCount = await fetch("http://localhost:8000/api/notifications/unread_count/", {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const resCount = await fetch(
+        "http://localhost:8000/api/notifications/unread_count/",
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
       const countData = await resCount.json();
-      setUnreadCount(countData.unread_count || 0);
+      const newUnread = countData.unread_count || 0;
 
-      // Αν είναι ανοιχτό το dropdown, φέρε και τη λίστα
-      if (open) {
-        const resList = await fetch("http://localhost:8000/api/notifications/", {
+      const resMsgs = await fetch(
+        "http://localhost:8000/api/chat/unread_count/",
+        {
           headers: { Authorization: `Bearer ${token}` },
-        });
-        if (!resList.ok) throw new Error("Σφάλμα φόρτωσης ειδοποιήσεων");
-        const listData = await resList.json();
+        }
+      );
+      const msgData = await resMsgs.json();
+      const newMsgs = msgData.unread_count || 0;
 
-        // Προσαρμογή σε όλες τις περιπτώσεις (pagination ή όχι)
+      if (newUnread > unreadCount || newMsgs > unreadMsgs) {
+        setAnimate(true);
+        toast.success("🔔 Νέα ειδοποίηση ή μήνυμα!");
+        setTimeout(() => setAnimate(false), 2000);
+      }
+
+      setUnreadCount(newUnread);
+      setUnreadMsgs(newMsgs);
+
+      if (open) {
+        const resList = await fetch(
+          "http://localhost:8000/api/notifications/",
+          {
+            headers: { Authorization: `Bearer ${token}` },
+          }
+        );
+        const listData = await resList.json();
         const list = Array.isArray(listData)
           ? listData
-          : listData.results
-          ? listData.results
-          : [];
-
-        // Ταξινόμηση (πιο πρόσφατες πρώτες)
+          : listData.results || [];
         const sorted = [...list].sort(
           (a, b) => new Date(b.created_at) - new Date(a.created_at)
         );
-
-        // Εμφάνιση μόνο των 5 πιο πρόσφατων
         setNotifications(sorted.slice(0, 5));
       }
     } catch (err) {
@@ -51,11 +74,10 @@ export default function NotificationsBell() {
 
   useEffect(() => {
     fetchNotifications();
-    const interval = setInterval(fetchNotifications, 5000);
+    const interval = setInterval(fetchNotifications, 6000);
     return () => clearInterval(interval);
   }, [token, open]);
 
-  // Μαρκάρισμα όλων ως διαβασμένων
   const markAllAsRead = async () => {
     try {
       await fetch("http://localhost:8000/api/notifications/mark_all_read/", {
@@ -69,179 +91,313 @@ export default function NotificationsBell() {
     }
   };
 
-  // Click σε ειδοποίηση
   const handleClick = (n) => {
     setOpen(false);
 
-    // Μαρκάρουμε τη συγκεκριμένη ειδοποίηση ως διαβασμένη
     fetch(`http://localhost:8000/api/notifications/${n.id}/mark_read/`, {
       method: "POST",
       headers: { Authorization: `Bearer ${token}` },
     }).catch(() => {});
 
-    if (n.transaction) {
-      const txId = typeof n.transaction === "object" ? n.transaction.id : n.transaction;
+    try {
+      if (n.type === "message") {
+        const chatUser = n.sender?.username || n.sender_username || "";
 
-      if (n.type === "message" || n.message?.includes("μήνυμα")) {
-        navigate(`/my-transactions?chat=${txId}`);
-        toast("💬 Άνοιγμα συνομιλίας...");
-      } else if (n.type === "transaction" || n.message?.includes("συναλλαγή")) {
-        navigate(`/my-transactions?transaction=${txId}`);
-        toast.success("📩 Νέο αίτημα συναλλαγής!");
-      } else {
-        navigate(`/my-transactions?tx=${txId}`);
-        toast("📩 Ενημέρωση συναλλαγής!");
+        if (n.item) {
+          navigate(`/items/${n.item}?chatWith=${chatUser}`);
+          toast("Άνοιγμα συνομιλίας για το αντικείμενο...");
+          return;
+        }
+
+        if (n.transaction) {
+          const txId =
+            typeof n.transaction === "object"
+              ? n.transaction.id
+              : n.transaction;
+          navigate(`/my-transactions?chat=${txId}`);
+          toast("Άνοιγμα συνομιλίας στη συναλλαγή...");
+          return;
+        }
+
+        if (n.sender) {
+          navigate(`/profile/${n.sender.id}?chatWith=${chatUser}`);
+          toast("Άνοιγμα συνομιλίας με τον χρήστη...");
+          return;
+        }
       }
-    } else {
-      toast(n.message || "📨 Νέα ειδοποίηση");
+
+      if (n.type === "transaction" && n.transaction) {
+        const txId =
+          typeof n.transaction === "object" ? n.transaction.id : n.transaction;
+        navigate(`/my-transactions?tx=${txId}`);
+        toast.success("Προβολή συναλλαγής!");
+        return;
+      }
+
+      if (
+        n.type === "review" ||
+        n.message?.toLowerCase().includes("αξιολόγηση")
+      ) {
+        navigate(`/profile/${n.sender_username}`);
+        toast("⭐ Προβολή αξιολόγησης");
+        return;
+      }
+
+      toast(n.message || "📢 Νέα ειδοποίηση");
+    } catch (err) {
+      console.error("⚠️ Σφάλμα κατά το άνοιγμα ειδοποίησης:", err);
     }
   };
 
+  const totalUnread = unreadCount + unreadMsgs;
+
   return (
     <div style={styles.wrapper}>
-      <button
-        style={styles.bellButton}
+      {/* 🔔 Καμπάνα */}
+      <motion.button
+        style={{
+          ...styles.bellButton,
+          animation: animate
+            ? "ring 0.7s ease-in-out infinite alternate"
+            : "none",
+        }}
+        whileHover={{ scale: 1.15 }}
+        whileTap={{ scale: 0.95 }}
         onClick={() => {
           const next = !open;
           setOpen(next);
           if (next) fetchNotifications();
         }}
       >
-        🔔
-        {unreadCount > 0 && <span style={styles.badge}>{unreadCount}</span>}
-      </button>
+        {totalUnread > 0 ? (
+          <FaBell size={22} color="#ffd43b" />
+        ) : (
+          <FaBellSlash size={22} color="#fff" />
+        )}
 
-      {open && (
-        <div style={styles.dropdown}>
-          <div style={styles.headerRow}>
-            <h4 style={{ margin: 0 }}>Ειδοποιήσεις</h4>
-            <button onClick={markAllAsRead} style={styles.markBtn}>
-              ✔️ Όλες διαβασμένες
-            </button>
-          </div>
+        {totalUnread > 0 && (
+          <motion.span
+            initial={{ scale: 0 }}
+            animate={{ scale: 1 }}
+            style={styles.badge}
+          >
+            {totalUnread}
+          </motion.span>
+        )}
+      </motion.button>
 
-          {notifications.length === 0 ? (
-            <p style={styles.empty}>Δεν υπάρχουν ειδοποιήσεις</p>
-          ) : (
-            notifications.map((n) => (
-              <div
-                key={n.id}
-                onClick={() => handleClick(n)}
-                style={{
-                  ...styles.notification,
-                  backgroundColor: n.is_read ? "#fff" : "#e6f7ff",
+      {/* 🔽 Dropdown */}
+      <AnimatePresence>
+        {open && (
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            transition={{ duration: 0.25 }}
+            style={styles.dropdown}
+          >
+            <div style={styles.headerRow}>
+              <h4 style={{ margin: 0, fontWeight: "600" }}>Ειδοποιήσεις</h4>
+              <button onClick={markAllAsRead} style={styles.markBtn}>
+                <FaCheck style={{ marginRight: "6px", color: "#0078d4" }} />
+                Όλες διαβασμένες
+              </button>
+            </div>
+
+            <div style={styles.list}>
+              {notifications.length === 0 ? (
+                <p style={styles.empty}>
+                  <FaInbox style={{ marginRight: "6px", color: "#999" }} />
+                  Δεν υπάρχουν ειδοποιήσεις
+                </p>
+              ) : (
+                notifications.map((n) => (
+                  <motion.div
+                    key={n.id}
+                    onClick={() => handleClick(n)}
+                    whileHover={{ backgroundColor: "#f1f8ff" }}
+                    style={{
+                      ...styles.notification,
+                      backgroundColor: n.is_read ? "transparent" : "#e9f4ff",
+                    }}
+                  >
+                    <div style={styles.notifIcon}>{getIcon(n.type)}</div>
+                    <div>
+                      <p style={styles.message}>
+                        <strong>{n.sender_username || "Σύστημα"}</strong> —{" "}
+                        {n.item ? (
+                          <span
+                            style={{
+                              color: "#0078d4",
+                              fontWeight: "600",
+                              display: "inline-flex",
+                              alignItems: "center",
+                            }}
+                          >
+                            <FaCommentDots style={{ marginRight: "5px" }} />{" "}
+                            {n.message}
+                          </span>
+                        ) : (
+                          n.message
+                        )}
+                      </p>
+                      <small style={styles.date}>
+                        {new Date(n.created_at).toLocaleString("el-GR", {
+                          day: "2-digit",
+                          month: "2-digit",
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })}
+                      </small>
+                    </div>
+                  </motion.div>
+                ))
+              )}
+            </div>
+
+            <div style={styles.footer}>
+              <button
+                style={styles.viewAllBtn}
+                onClick={() => {
+                  setOpen(false);
+                  navigate("/notifications");
                 }}
               >
-                <p style={{ margin: 0 }}>
-                  <strong>{n.sender_username || "Σύστημα"}</strong> — {n.message}
-                </p>
-                <small style={styles.date}>
-                  {new Date(n.created_at).toLocaleString("el-GR", {
-                    day: "2-digit",
-                    month: "2-digit",
-                    hour: "2-digit",
-                    minute: "2-digit",
-                  })}
-                </small>
-              </div>
-            ))
-          )}
+                Δες όλες τις ειδοποιήσεις
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
-          {/* Κουμπί "Δες όλες" */}
-          <div style={styles.footer}>
-            <button
-              style={styles.viewAllBtn}
-              onClick={() => {
-                setOpen(false);
-                navigate("/notifications");
-              }}
-            >
-              📜 Δες όλες τις ειδοποιήσεις
-            </button>
-          </div>
-        </div>
-      )}
+      <style>
+        {`
+          @keyframes ring {
+            0% { transform: rotate(0); }
+            25% { transform: rotate(12deg); }
+            50% { transform: rotate(0deg); }
+            75% { transform: rotate(-12deg); }
+            100% { transform: rotate(0); }
+          }
+        `}
+      </style>
     </div>
   );
 }
 
+function getIcon(type) {
+  switch (type) {
+    case "message":
+      return <FaCommentDots color="#0078d4" />;
+    case "transaction":
+      return <FaExchangeAlt color="#22c55e" />;
+    case "review":
+      return <FaStar color="#facc15" />;
+    default:
+      return <FaBullhorn color="#888" />;
+  }
+}
+
 const styles = {
-  wrapper: { position: "relative", marginLeft: "10px" },
+  wrapper: { position: "relative", marginLeft: "12px" },
   bellButton: {
     position: "relative",
-    fontSize: "1.6rem",
     background: "none",
     border: "none",
     cursor: "pointer",
     color: "white",
+    outline: "none",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
   },
   badge: {
     position: "absolute",
-    top: "-5px",
-    right: "-8px",
-    background: "red",
+    top: "-3px",
+    right: "-4px",
+    background: "linear-gradient(135deg, #ff4b2b, #ff416c)",
     color: "white",
     borderRadius: "50%",
-    padding: "2px 6px",
-    fontSize: "0.75rem",
+    width: "18px",
+    height: "18px",
+    fontSize: "0.7rem",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
     fontWeight: "bold",
+    boxShadow: "0 0 6px rgba(0,0,0,0.3)",
   },
   dropdown: {
     position: "absolute",
-    top: "40px",
+    top: "45px",
     right: 0,
-    width: "340px",
-    background: "#fefefe",
-    border: "1px solid #ccc",
-    borderRadius: "10px",
-    boxShadow: "0 4px 15px rgba(0,0,0,0.2)",
-    padding: "10px",
+    width: "360px",
+    backdropFilter: "blur(12px)",
+    background: "rgba(255,255,255,0.9)",
+    border: "1px solid rgba(255,255,255,0.4)",
+    borderRadius: "14px",
+    boxShadow: "0 6px 20px rgba(0,0,0,0.15)",
+    padding: "14px",
     zIndex: 1000,
-    fontFamily: "Arial, sans-serif",
+    fontFamily: "Inter, sans-serif",
     color: "#222",
     display: "flex",
     flexDirection: "column",
-    maxHeight: "420px",
+    maxHeight: "450px",
   },
   headerRow: {
     display: "flex",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: "8px",
+    marginBottom: "10px",
   },
   markBtn: {
     background: "none",
     border: "none",
-    color: "#007bff",
+    color: "#0078d4",
     cursor: "pointer",
     fontSize: "0.85rem",
+    fontWeight: "500",
+  },
+  list: {
+    flex: 1,
+    overflowY: "auto",
+    marginBottom: "10px",
+    paddingRight: "2px",
   },
   notification: {
-    padding: "10px 0",
-    borderBottom: "1px solid #eee",
+    display: "flex",
+    gap: "10px",
+    padding: "10px",
+    borderRadius: "10px",
+    marginBottom: "6px",
     cursor: "pointer",
-    transition: "background 0.2s",
+    transition: "0.2s",
   },
+  notifIcon: { fontSize: "1.2rem", flexShrink: 0 },
+  message: { margin: 0, fontSize: "0.9rem", fontWeight: "500" },
   date: { color: "#555", fontSize: "0.8rem" },
   empty: {
     textAlign: "center",
     color: "#777",
     fontStyle: "italic",
-    padding: "10px 0",
+    padding: "16px 0",
   },
   footer: {
-    marginTop: "10px",
-    borderTop: "1px solid #ddd",
+    borderTop: "1px solid rgba(0,0,0,0.1)",
     paddingTop: "8px",
     textAlign: "center",
   },
   viewAllBtn: {
-    background: "#007bff",
+    background: "linear-gradient(135deg, #0078d4, #00b4ff)",
     color: "white",
     border: "none",
-    borderRadius: "6px",
-    padding: "6px 12px",
+    borderRadius: "8px",
+    padding: "7px 14px",
     cursor: "pointer",
     fontSize: "0.9rem",
+    fontWeight: "500",
+    transition: "0.2s",
+    width: "100%",
   },
 };

@@ -1,6 +1,7 @@
 from django.db import models
 from django.contrib.auth import get_user_model
 from transactions.models import Transaction
+from items.models import Item
 
 User = get_user_model()
 
@@ -11,6 +12,7 @@ class Message(models.Model):
     text = models.TextField()
     created_at = models.DateTimeField(auto_now_add=True)
     is_read = models.BooleanField(default=False)
+    item = models.ForeignKey(Item, on_delete=models.SET_NULL, null=True, blank=True, related_name='messages')
 
     class Meta:
         ordering = ['created_at']

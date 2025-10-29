@@ -1,4 +1,4 @@
-from rest_framework import viewsets, permissions, status, filters as drf_filters
+from rest_framework import viewsets, permissions, generics, status, filters as drf_filters
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from django.contrib.auth import get_user_model
@@ -13,6 +13,11 @@ from .filters import ItemFilter  # ΝΕΟ
 from transactions.models import Transaction
 from transactions.serializers import TransactionSerializer
 
+from django.db import transaction
+from django.db.models import F, Value
+from django.db.models.functions import Coalesce
+
+from rest_framework.parsers import MultiPartParser, FormParser
 
 # Συνάρτηση υπολογισμού απόστασης (Haversine formula)
 def haversine(lat1, lon1, lat2, lon2):
@@ -223,3 +228,97 @@ class ItemViewSet(viewsets.ModelViewSet):
         item.available = bool(available)
         item.save()
         return Response({'detail': f'Η διαθεσιμότητα ενημερώθηκε σε {item.available}.'})
+
+
+    def retrieve(self, request, *args, **kwargs):
+      instance = self.get_object()
+
+      # --- 1️⃣ Μην μετράς ποτέ τον ιδιοκτήτη ---
+      if request.user.is_authenticated and request.user == instance.owner:
+        serializer = self.get_serializer(instance)
+        return Response(serializer.data)
+
+      # --- 2️⃣ Μία φορά ανά session ---
+      session_key = f"viewed_item_{instance.pk}"
+      if not request.session.get(session_key, False):
+
+        request.session[session_key] = True
+        request.session.modified = True
+
+        with transaction.atomic():
+            # Χρησιμοποιούμε Coalesce για να καλύψουμε πιθανό NULL
+            type(instance).objects.filter(pk=instance.pk).update(
+                views=Coalesce(F("views"), Value(0)) + 1
+            )
+            # Αποθήκευση flag στο session
+        instance.refresh_from_db(fields=["views"])
+
+      print("🔍 USER:", request.user)
+      print("🔍 OWNER:", instance.owner)
+      print("🔍 Same?", request.user == instance.owner)
+
+      serializer = self.get_serializer(instance)
+      return Response(serializer.data)
+
+    @action(detail=False, methods=['get'], permission_classes=[permissions.AllowAny])
+    def popular(self, request):
+       """
+       Επιστρέφει τα πιο δημοφιλή αντικείμενα με βάση τις προβολές
+       """
+       items = Item.objects.filter(available=True).order_by('-views')[:10]
+       serializer = self.get_serializer(items, many=True)
+       return Response(serializer.data)
+
+    @action(detail=True, methods=["DELETE"], url_path="delete_image/(?P<image_id>[^/.]+)")
+    def delete_image(self, request, pk=None, image_id=None):
+        """Διαγραφή εικόνας αντικειμένου"""
+        item = self.get_object()
+        if request.user != item.owner:
+            return Response({"detail": "Δεν έχεις δικαίωμα διαγραφής."},
+                            status=status.HTTP_403_FORBIDDEN)
+        try:
+            image = ItemImage.objects.get(id=image_id, item=item)
+            image.delete()
+            return Response({"detail": "Η εικόνα διαγράφηκε."}, status=status.HTTP_204_NO_CONTENT)
+        except ItemImage.DoesNotExist:
+            return Response({"detail": "Η εικόνα δεν βρέθηκε."}, status=status.HTTP_404_NOT_FOUND)
+
+
+
+class UploadGalleryImageView(generics.CreateAPIView):
+    """
+    Endpoint: POST /api/items/<id>/upload_gallery_image/
+    Body: multipart/form-data → { "image": <αρχείο> }
+    """
+    permission_classes = [permissions.IsAuthenticated]
+    parser_classes = [MultiPartParser, FormParser]
+    serializer_class = ItemImageSerializer
+
+    def post(self, request, *args, **kwargs):
+        item_id = kwargs.get("pk")
+        image = request.FILES.get("image")
+
+        if not image:
+            return Response(
+                {"detail": "Δεν στάλθηκε αρχείο εικόνας."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            item = Item.objects.get(pk=item_id)
+        except Item.DoesNotExist:
+            return Response(
+                {"detail": "Το αντικείμενο δεν βρέθηκε."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        # Μόνο ο ιδιοκτήτης μπορεί να ανεβάσει εικόνες
+        if item.owner != request.user:
+            return Response(
+                {"detail": "Δεν έχεις δικαίωμα προσθήκης εικόνας σε αυτό το αντικείμενο."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        new_img = ItemImage.objects.create(item=item, image=image)
+        serializer = ItemImageSerializer(new_img, context={"request": request})
+        return Response(serializer.data, status=status.HTTP_201_CREATED)

@@ -437,6 +437,7 @@ class TransactionViewSet(viewsets.ModelViewSet):
         if tx.owner_completed and tx.requester_completed:
             tx.status = 'completed'
             tx.returned_at = timezone.now()
+            tx.end_date = timezone.now()
 
             if tx.transaction_type == 'exchange' and tx.item and tx.requested_item:
                 old_owner_1 = tx.item.owner

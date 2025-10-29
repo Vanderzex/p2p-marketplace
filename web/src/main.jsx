@@ -3,16 +3,17 @@ import ReactDOM from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
 import App from "./App.jsx";
 import "./index.css";
-import { AuthProvider } from "./context/AuthContext"; // ✅ προσθήκη
-import { Toaster } from "react-hot-toast"; // ✅ προσθήκη
+import { AuthProvider } from "./context/AuthContext";
+import { Toaster } from "react-hot-toast";
+import { ItemsProvider } from "./context/ItemsContext";
 
 ReactDOM.createRoot(document.getElementById("root")).render(
-  <React.StrictMode>
-    <BrowserRouter>
-      <AuthProvider>
+  <BrowserRouter>
+    <AuthProvider>
+      <ItemsProvider>
         <App />
-        <Toaster position="top-center" reverseOrder={false} />
-      </AuthProvider>
-    </BrowserRouter>
-  </React.StrictMode>
+      </ItemsProvider>
+      <Toaster position="top-center" reverseOrder={false} />
+    </AuthProvider>
+  </BrowserRouter>
 );

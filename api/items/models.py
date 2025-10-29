@@ -72,6 +72,8 @@ class Item(models.Model):
         verbose_name="Τρόπος Παράδοσης"
     )
 
+    views = models.PositiveIntegerField(default=0, verbose_name="Προβολές")
+
     def __str__(self):
         # Εμφανίζει και την κατηγορία για πιο καθαρή περιγραφή
         return f"{self.title} ({self.get_category_display()} - {self.get_transaction_type_display()})"

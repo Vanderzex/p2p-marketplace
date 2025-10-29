@@ -1,5 +1,5 @@
 from rest_framework import generics, viewsets, permissions, status
-from rest_framework.decorators import action
+from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.response import Response
 from rest_framework.parsers import MultiPartParser, FormParser
 from django.contrib.auth import get_user_model
@@ -33,10 +33,9 @@ class MeView(generics.RetrieveAPIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get_serializer_context(self):
-       context = super().get_serializer_context()
-       context["request"] = self.request
-       return context
-
+        context = super().get_serializer_context()
+        context["request"] = self.request
+        return context
 
     def get_object(self):
         return self.request.user
@@ -59,7 +58,6 @@ class UserViewSet(viewsets.ReadOnlyModelViewSet):
     serializer_class = UserSerializer
     permission_classes = [permissions.AllowAny]
 
-    # Προαιρετικό custom action για ενημέρωση τοποθεσίας
     @action(detail=False, methods=["post"], permission_classes=[permissions.IsAuthenticated])
     def update_location(self, request):
         """
@@ -111,8 +109,7 @@ class UploadProfileImageView(generics.UpdateAPIView):
 
         return Response(
             {"detail": "Η φωτογραφία προφίλ ενημερώθηκε επιτυχώς!",
-             "profile_image": image_url,
-             },
+             "profile_image": image_url},
             status=status.HTTP_200_OK
         )
 
@@ -154,3 +151,21 @@ class ChangePasswordView(generics.UpdateAPIView):
             {"detail": "Ο κωδικός άλλαξε επιτυχώς!"},
             status=status.HTTP_200_OK
         )
+
+
+# Νέο endpoint: Αναζήτηση χρήστη με username
+@api_view(["GET"])
+@permission_classes([permissions.AllowAny])
+def get_user_by_username(request, username):
+    """
+    Endpoint: GET /api/users/by_username/<username>/
+    Επιστρέφει id και username του χρήστη.
+    """
+    try:
+        user = User.objects.get(username=username)
+        return Response({
+            "id": user.id,
+            "username": user.username,
+        }, status=status.HTTP_200_OK)
+    except User.DoesNotExist:
+        return Response({"detail": "User not found"}, status=status.HTTP_404_NOT_FOUND)

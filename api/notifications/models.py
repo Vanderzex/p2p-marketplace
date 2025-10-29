@@ -1,6 +1,7 @@
 from django.db import models
 from django.contrib.auth import get_user_model
 from transactions.models import Transaction
+from items.models import Item
 
 User = get_user_model()
 
@@ -32,6 +33,8 @@ class Notification(models.Model):
 
     # Ημερομηνία δημιουργίας
     created_at = models.DateTimeField(auto_now_add=True)
+
+    item = models.ForeignKey(Item, null=True, blank=True, on_delete=models.SET_NULL)
 
     class Meta:
         ordering = ["-created_at"]
