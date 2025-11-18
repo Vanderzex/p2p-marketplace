@@ -25,9 +25,11 @@ import "swiper/css";
 import "swiper/css/navigation";
 import "swiper/css/pagination";
 import { ItemsProvider } from "./context/ItemsContext";
+import FavoritesPage from "./FavoritesPage";
 
 import { motion } from "framer-motion";
 import {
+  FaHeart,
   FaBell,
   FaBellSlash,
   FaSearch,
@@ -63,7 +65,6 @@ export default function App() {
     fetchItems();
   }, [location.state?.refreshItems]);
 
-  
   const fetchItems = async () => {
     try {
       const res = await fetch("http://localhost:8000/api/items/");
@@ -77,14 +78,12 @@ export default function App() {
       setLoading(false);
     }
   };
-  
 
   const handleAddItem = (newItem) => {
     setItems((prev) => [...prev, newItem]);
     setSuccessMessage("✅ Το αντικείμενο προστέθηκε!");
     setTimeout(() => setSuccessMessage(""), 4000);
   };
-  
 
   return (
     <>
@@ -185,11 +184,31 @@ export default function App() {
                 <NotificationsBell />
               </div>
 
+              {/* Αγαπημένα */}
+              <Link
+                to="/favorites"
+                style={{
+                  ...styles.link,
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "6px",
+                }}
+                onMouseEnter={(e) =>
+                  (e.currentTarget.style.background = "rgba(255,255,255,0.15)")
+                }
+                onMouseLeave={(e) =>
+                  (e.currentTarget.style.background = "transparent")
+                }
+              >
+                <FaHeart style={{ color: "#ff4d6d" }} />
+                Αγαπημένα
+              </Link>
+
               {/* Προφίλ με avatar */}
               <Link
                 to={`/profile/${user?.id}`}
                 style={styles.profileSection}
-                onClick={() => setMenuOpen(false)} 
+                onClick={() => setMenuOpen(false)}
               >
                 <img
                   src={
@@ -291,15 +310,15 @@ export default function App() {
               maxWidth: "450px",
               position: "relative",
             }}
-            onClick={(e) => e.stopPropagation()} 
+            onClick={(e) => e.stopPropagation()}
           >
             {/* Κουμπί κλεισίματος */}
             <button
               onClick={() => setShowAuth(false)}
               style={{
                 position: "absolute",
-                top: "-16px", 
-                right: "-16px",  
+                top: "-16px",
+                right: "-16px",
                 background: "white",
                 borderRadius: "50%",
                 width: "32px",
@@ -479,6 +498,14 @@ export default function App() {
             </ProtectedRoute>
           }
         />
+        <Route
+          path="/favorites"
+          element={
+            <ProtectedRoute>
+              <FavoritesPage />
+            </ProtectedRoute>
+          }
+        />
       </Routes>
     </>
   );
@@ -495,7 +522,7 @@ function HomePage({
 }) {
   const [query, setQuery] = useState("");
   const [transactionType, setTransactionType] = useState("");
-  const [category, setCategory] = useState(""); 
+  const [category, setCategory] = useState("");
   const [onlyAvailable, setOnlyAvailable] = useState(false);
   const [maxDistance, setMaxDistance] = useState("");
   const [userCoords, setUserCoords] = useState(null);
@@ -517,7 +544,7 @@ function HomePage({
     // Πλήρες reset σελίδας όταν ζητηθεί (π.χ. logo ή επιστροφή)
     if (location.state?.resetHome) {
       console.log("🔁 Reset Home triggered");
-      setResetting(true); 
+      setResetting(true);
       setQuery("");
       setTransactionType("");
       setCategory("");
@@ -1349,7 +1376,7 @@ const styles = {
     background:
       "linear-gradient(90deg, rgba(0,120,212,0.9), rgba(102,51,255,0.9))",
     color: "white",
-    padding: "14px 5vw", 
+    padding: "14px 5vw",
     display: "flex",
     justifyContent: "space-between",
     alignItems: "center",
@@ -1399,7 +1426,7 @@ const styles = {
     alignItems: "flex-start",
     position: "absolute",
     top: "65px",
-    right: "5vw", 
+    right: "5vw",
     background: "rgba(15,15,15,0.95)",
     borderRadius: "10px",
     padding: "12px 18px",
@@ -1447,7 +1474,7 @@ const styles = {
     whiteSpace: "nowrap",
     maxWidth: "120px",
     overflow: "hidden",
-    textOverflow: "ellipsis", 
+    textOverflow: "ellipsis",
   },
 
   profileSection: {
@@ -1612,7 +1639,7 @@ const styles = {
   // Wrapper για sliders
   wrapper: {
     width: "100%",
-    maxWidth: "1300px", 
+    maxWidth: "1300px",
     margin: "0 auto",
     padding: "0 20px",
     display: "flex",
@@ -1781,7 +1808,7 @@ const styles = {
     objectFit: "cover",
     border: "2px solid rgba(255,255,255,0.4)",
     boxShadow: "0 0 4px rgba(0,0,0,0.25)",
-    backgroundColor: "#f3f4f6", 
+    backgroundColor: "#f3f4f6",
     flexShrink: 0,
   },
 
@@ -1801,7 +1828,7 @@ const styles = {
     borderBottom: "1px solid #e2e8f0",
     padding: "10px 16px",
     position: "sticky",
-    top: 0, 
+    top: 0,
     zIndex: 99,
     boxShadow: "inset 0 -1px 0 #e5e7eb",
   },
@@ -1828,11 +1855,11 @@ const styles = {
     alignItems: "center",
     gap: "16px",
     width: "100%",
-    maxWidth: "800px", 
+    maxWidth: "800px",
     background: "rgba(255, 255, 255, 0.5)",
     backdropFilter: "blur(12px)",
-    borderRadius: "60px", 
-    padding: "16px 24px", 
+    borderRadius: "60px",
+    padding: "16px 24px",
     boxShadow: "0 8px 30px rgba(0, 0, 0, 0.1)",
     border: "1px solid rgba(255, 255, 255, 0.25)",
     transition: "all 0.3s ease",
@@ -1895,7 +1922,7 @@ const styles = {
     boxShadow: "0 6px 16px rgba(0,0,0,0.08)",
     transition: "transform 0.25s ease, box-shadow 0.25s ease",
     height: "100%",
-    minHeight: "360px", 
+    minHeight: "360px",
   },
 
   carouselImageWrapper: {
@@ -2006,7 +2033,7 @@ const styles = {
   heroTitle: {
     fontSize: "2.8rem",
     fontWeight: "800",
-    color: "#1e293b", 
+    color: "#1e293b",
     letterSpacing: "-1px",
     marginBottom: "10px",
   },
@@ -2031,7 +2058,7 @@ const styles = {
     marginBottom: "10px",
     textAlign: "center",
     letterSpacing: "-0.5px",
-    textShadow: "0 3px 12px rgba(67, 56, 202, 0.25)", 
+    textShadow: "0 3px 12px rgba(67, 56, 202, 0.25)",
   },
 
   subtitleSoft: {

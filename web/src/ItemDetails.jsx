@@ -10,6 +10,8 @@ import "swiper/css";
 import "swiper/css/navigation";
 import "swiper/css/pagination";
 import {
+  FaHeart,
+  FaRegHeart,
   FaExchangeAlt,
   FaHandshake,
   FaTruck,
@@ -34,7 +36,7 @@ import {
 export default function ItemDetails() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { user, token, auth } = useAuth();
+  const { user, token, authFetch } = useAuth();
 
   const [item, setItem] = useState(null);
   const [userItems, setUserItems] = useState([]);
@@ -77,7 +79,7 @@ export default function ItemDetails() {
         return res.json();
       })
       .then((data) => {
-        console.log("owner_id:", data.owner_id); 
+        console.log("owner_id:", data.owner_id);
         console.log("owner_username:", data.owner_username);
         setItem(data);
         setEditedItem(data);
@@ -100,7 +102,7 @@ export default function ItemDetails() {
         .then((res) => res.json())
         .then((data) => {
           const others = data.filter((i) => i.id !== item.id);
-          setUserItems(others.slice(0, 5)); 
+          setUserItems(others.slice(0, 5));
         })
         .catch((err) =>
           console.error("Σφάλμα φόρτωσης άλλων αντικειμένων:", err)
@@ -144,6 +146,48 @@ export default function ItemDetails() {
   }, [location, item, token]);
 
   const isOwner = user?.username === item?.owner_username;
+
+  const handleToggleFavorite = async () => {
+    if (!token) {
+      toast.error("Πρέπει να συνδεθείς για να προσθέσεις στα αγαπημένα");
+      return;
+    }
+    if (isOwner) {
+      toast.error(
+        "Δεν μπορείς να βάλεις στα αγαπημένα το δικό σου αντικείμενο."
+      );
+      return;
+    }
+
+    const action = item.is_favorite ? "unfavorite" : "favorite";
+
+    try {
+      const res = await authFetch(
+        `http://localhost:8000/api/items/${id}/${action}/`,
+        {
+          method: "POST",
+        }
+      );
+
+      if (!res.ok) {
+        throw new Error("Αποτυχία ενημέρωσης αγαπημένων");
+      }
+
+      // τοπικό update στο state
+      setItem((prev) =>
+        prev ? { ...prev, is_favorite: !prev.is_favorite } : prev
+      );
+
+      toast.success(
+        !item.is_favorite
+          ? "Προστέθηκε στα αγαπημένα σου"
+          : "Αφαιρέθηκε από τα αγαπημένα σου"
+      );
+    } catch (err) {
+      console.error(err);
+      toast.error("Κάτι πήγε στραβά με τα αγαπημένα");
+    }
+  };
 
   // Διαγραφή αντικειμένου
   const handleDelete = async () => {
@@ -569,7 +613,8 @@ export default function ItemDetails() {
                   {/* Ποσοστό αξιολογήσεων */}
                   {item.owner_rating_percent !== undefined && (
                     <span style={styles.ratingBadge}>
-                      <FaStar color="#facc15" />  {item.owner_rating_percent}% θετικές
+                      <FaStar color="#facc15" /> {item.owner_rating_percent}%
+                      θετικές
                     </span>
                   )}
                 </div>
@@ -578,14 +623,32 @@ export default function ItemDetails() {
               </div>
             </div>
 
-            {/* Προβολές */}
-            {item.views !== undefined && (
-              <div style={styles.viewsBox}>
-                <FaEye />{" "}
-                <span style={{ fontWeight: "bold" }}>{item.views}</span>{" "}
-                προβολές
-              </div>
-            )}
+            {/* Δεξιά: Αγαπημένα + Προβολές */}
+            <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+              {/* Κουμπί αγαπημένων (δεν εμφανίζεται στον ιδιοκτήτη) */}
+              {!isOwner && (
+                <button
+                  onClick={handleToggleFavorite}
+                  style={styles.favoriteBtn}
+                  title={
+                    item.is_favorite
+                      ? "Αφαίρεση από τα αγαπημένα"
+                      : "Προσθήκη στα αγαπημένα"
+                  }
+                >
+                  {item.is_favorite ? <FaHeart /> : <FaRegHeart />}
+                </button>
+              )}
+
+              {/* Προβολές */}
+              {item.views !== undefined && (
+                <div style={styles.viewsBox}>
+                  <FaEye />{" "}
+                  <span style={{ fontWeight: "bold" }}>{item.views}</span>{" "}
+                  προβολές
+                </div>
+              )}
+            </div>
           </div>
 
           <h1 style={styles.title}>{item.title}</h1>
@@ -1006,14 +1069,14 @@ export default function ItemDetails() {
 const styles = {
   /* Full-screen φόντο */
   wrapper: {
-    width: "100vw", 
+    width: "100vw",
     minHeight: "100vh",
     background: "#f8f9fa",
     fontFamily: "Inter, Arial, sans-serif",
     display: "flex",
     justifyContent: "center",
     alignItems: "flex-start",
-    padding: "0", 
+    padding: "0",
     overflowX: "hidden",
   },
 
@@ -1025,10 +1088,10 @@ const styles = {
     justifyContent: "space-between",
     alignItems: "flex-start",
     background: "white",
-    borderRadius: "0", 
-    boxShadow: "none", 
-    padding: "40px 60px", 
-    margin: "0", 
+    borderRadius: "0",
+    boxShadow: "none",
+    padding: "40px 60px",
+    margin: "0",
   },
 
   /* Εικόνα αριστερά */
@@ -1108,8 +1171,8 @@ const styles = {
     flexDirection: "column",
     gap: "14px",
     animation: "fadeIn 0.3s ease",
-    fontFamily: "'Poppins', 'Inter', sans-serif", 
-    color: "#1f2937", 
+    fontFamily: "'Poppins', 'Inter', sans-serif",
+    color: "#1f2937",
   },
 
   select: {
@@ -1168,13 +1231,13 @@ const styles = {
     color: "white",
     border: "none",
     borderRadius: "10px",
-    padding: "8px 16px", 
+    padding: "8px 16px",
     fontWeight: "600",
     cursor: "pointer",
     fontSize: "0.95rem",
     boxShadow: "0 3px 8px rgba(37,99,235,0.25)",
     transition: "all 0.25s ease",
-    minWidth: "120px", 
+    minWidth: "120px",
   },
   deleteBtn: {
     flex: "unset",
@@ -1219,7 +1282,7 @@ const styles = {
     minWidth: "120px",
   },
   transactionBtn: {
-    background: "linear-gradient(90deg, #16a34a, #22c55e)", 
+    background: "linear-gradient(90deg, #16a34a, #22c55e)",
     color: "white",
     border: "none",
     borderRadius: "14px",
@@ -1377,7 +1440,7 @@ const styles = {
     borderRadius: "12px",
     width: "90%",
     maxWidth: "500px",
-    maxHeight: "80vh", 
+    maxHeight: "80vh",
     display: "flex",
     flexDirection: "column",
     boxShadow: "0 6px 20px rgba(0,0,0,0.2)",
@@ -1413,7 +1476,7 @@ const styles = {
   mainImageFrame: {
     width: "100%",
     maxWidth: "900px",
-    aspectRatio: "5 / 3", 
+    aspectRatio: "5 / 3",
     background: "#fff",
     borderRadius: "12px",
     boxShadow: "0 4px 14px rgba(0,0,0,0.12)",
@@ -1429,7 +1492,7 @@ const styles = {
     maxHeight: "100%",
     width: "100%",
     height: "100%",
-    objectFit: "contain", 
+    objectFit: "contain",
     userSelect: "none",
     cursor: "pointer",
     transition: "transform 0.25s ease, box-shadow 0.25s ease",
@@ -1491,13 +1554,25 @@ const styles = {
   toggleButtonSmall: {
     border: "none",
     borderRadius: "8px",
-    padding: "8px 14px", 
+    padding: "8px 14px",
     fontWeight: "600",
     fontSize: "0.9rem",
     color: "white",
     cursor: "pointer",
     boxShadow: "0 3px 8px rgba(0,0,0,0.15)",
     transition: "all 0.25s ease",
-    minWidth: "150px", 
+    minWidth: "150px",
+  },
+  favoriteBtn: {
+    background: "none",
+    border: "none",
+    cursor: "pointer",
+    fontSize: "1.4rem",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: "4px",
+    color: "#e11d48", // λίγο ροζ/κόκκινο
+    transition: "transform 0.15s ease, opacity 0.15s ease",
   },
 };

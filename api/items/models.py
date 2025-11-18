@@ -1,6 +1,7 @@
 from django.db import models
 from django.contrib.auth import get_user_model
 from django.utils.timezone import now
+from django.conf import settings
 
 User = get_user_model()
 
@@ -73,6 +74,14 @@ class Item(models.Model):
     )
 
     views = models.PositiveIntegerField(default=0, verbose_name="Προβολές")
+
+    name = models.CharField(max_length=255,blank=True, default="")
+
+    favorites = models.ManyToManyField(
+        settings.AUTH_USER_MODEL,
+        related_name="favorite_items",
+        blank=True
+    )
 
     def __str__(self):
         # Εμφανίζει και την κατηγορία για πιο καθαρή περιγραφή

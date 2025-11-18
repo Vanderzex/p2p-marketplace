@@ -42,6 +42,11 @@ class ItemViewSet(viewsets.ModelViewSet):
     search_fields = ["title", "description"]
     ordering_fields = ["created_at", "title"]
 
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        context["request"] = self.request
+        return context
+
     # Διορθωμένη μέθοδος get_queryset()
     def get_queryset(self):
         queryset = super().get_queryset()
@@ -268,6 +273,36 @@ class ItemViewSet(viewsets.ModelViewSet):
        items = Item.objects.filter(available=True).order_by('-views')[:10]
        serializer = self.get_serializer(items, many=True)
        return Response(serializer.data)
+
+    @action(detail=True, methods=['post'], permission_classes=[permissions.IsAuthenticated])
+    def favorite(self, request, pk=None):
+        """
+        Προσθήκη του αντικειμένου στα αγαπημένα του τρέχοντος χρήστη
+        Endpoint: POST /api/items/<id>/favorite/
+        """
+        item = self.get_object()
+        item.favorites.add(request.user)
+        return Response({"status": "favorited"}, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=['post'], permission_classes=[permissions.IsAuthenticated])
+    def unfavorite(self, request, pk=None):
+        """
+        Αφαίρεση του αντικειμένου από τα αγαπημένα του τρέχοντος χρήστη
+        Endpoint: POST /api/items/<id>/unfavorite/
+        """
+        item = self.get_object()
+        item.favorites.remove(request.user)
+        return Response({"status": "unfavorited"}, status=status.HTTP_200_OK)
+
+    @action(detail=False, methods=['get'], permission_classes=[permissions.IsAuthenticated])
+    def favorites(self, request):
+        """
+        Λίστα με όλα τα αγαπημένα αντικείμενα του τρέχοντος χρήστη
+        Endpoint: GET /api/items/favorites/
+        """
+        items = Item.objects.filter(favorites=request.user, available=True)
+        serializer = self.get_serializer(items, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
 
     @action(detail=True, methods=["DELETE"], url_path="delete_image/(?P<image_id>[^/.]+)")
     def delete_image(self, request, pk=None, image_id=None):
