@@ -173,8 +173,8 @@ export default function AddItemForm({ onAddItem }) {
       >
         <option value="in_person">Χέρι με χέρι</option>
         <option value="shipping">Αποστολή με courier</option>
-        <option value="pickup_point">Σημείο συνάντησης</option>
-        <option value="other">Άλλο</option>
+        { /*<option value="pickup_point">Σημείο συνάντησης</option>
+        <option value="other">Άλλο</option> */ }
       </select>
 
       {(transactionType === "loan" || transactionType === "either") && (
