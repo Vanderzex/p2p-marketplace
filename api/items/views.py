@@ -50,6 +50,9 @@ class ItemViewSet(viewsets.ModelViewSet):
     # Διορθωμένη μέθοδος get_queryset()
     def get_queryset(self):
         queryset = super().get_queryset()
+        
+        if self.action == "list":
+          queryset = queryset.filter(available=True)
 
         # Ανάγνωση query params για απόσταση
         lat = self.request.query_params.get("lat")
@@ -137,7 +140,7 @@ class ItemViewSet(viewsets.ModelViewSet):
     # Αντικείμενα συνδεδεμένου χρήστη
     @action(detail=False, methods=['get'], permission_classes=[permissions.IsAuthenticated])
     def my_items(self, request):
-        items = Item.objects.filter(owner=request.user, available=True)
+        items = Item.objects.filter(owner=request.user).order_by('-created_at')
         serializer = self.get_serializer(items, many=True)
         return Response(serializer.data)
 

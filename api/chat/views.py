@@ -25,16 +25,14 @@ class MessageViewSet(viewsets.ModelViewSet):
         receiver_id = self.request.data.get("receiver")
         text = self.request.data.get("text", "").strip()
         transaction_id = self.request.data.get("transaction")
-        item_id = self.request.data.get("item")  # ✅
+        item_id = self.request.data.get("item")
 
         if not receiver_id or not text:
             raise ValueError("Receiver and text required")
 
-        # ✅ Αποθήκευση μηνύματος
         message = serializer.save(sender=sender)
 
         try:
-            # 📦 Chat μέσα σε συναλλαγή
             if transaction_id:
                 Notification.objects.create(
                     user_id=receiver_id,
@@ -44,7 +42,6 @@ class MessageViewSet(viewsets.ModelViewSet):
                     message=f"💬 Νέο μήνυμα από {sender.username} στη συναλλαγή #{message.transaction.id}",
                 )
 
-            # 💬 Chat μεταξύ χρηστών για αντικείμενο
             elif item_id:
                 try:
                     related_item = Item.objects.get(id=item_id)
@@ -55,14 +52,13 @@ class MessageViewSet(viewsets.ModelViewSet):
                     user_id=receiver_id,
                     sender=sender,
                     type="message",
-                    item=related_item,  # ✅ Αποθηκεύεται στο Notification
+                    item=related_item,
                     message=(
                         f"💬 Νέο μήνυμα από {sender.username} σχετικά με το αντικείμενο "
                         f"'{related_item.title}'" if related_item else f"💬 Νέο μήνυμα από {sender.username}"
                     ),
                 )
 
-            # 💬 Γενικό μήνυμα χωρίς item/transaction
             else:
                 Notification.objects.create(
                     user_id=receiver_id,

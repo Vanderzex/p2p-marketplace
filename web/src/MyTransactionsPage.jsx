@@ -849,7 +849,8 @@ export default function MyTransactionsPage() {
 
             <div style={{ display: "flex", gap: "10px" }}>
               <button type="submit" style={styles.submitButton}>
-                <FaCheckCircle style={{ color: "#28a745", fontSize: "24px" }} /> Υποβολή
+                <FaCheckCircle style={{ color: "#28a745", fontSize: "24px" }} />{" "}
+                Υποβολή
               </button>
               <button
                 type="button"
@@ -932,7 +933,10 @@ export default function MyTransactionsPage() {
                               )
                             }
                           >
-                            <FaCheckCircle style={{ color: "#28a745", fontSize: "24px" }} /> Επιλογή
+                            <FaCheckCircle
+                              style={{ color: "#28a745", fontSize: "24px" }}
+                            />{" "}
+                            Επιλογή
                           </button>
                         </div>
                       ))}
@@ -975,8 +979,10 @@ export default function MyTransactionsPage() {
                   toast.error("⚠️ Σφάλμα αποθήκευσης τοποθεσίας");
                 }
               }}
+              onClose={() => setShowMapModal(false)} // 👈 ΠΕΡΝΑΜΕ ΤΟ onClose ΣΤΟ MAPSELECTOR
             />
 
+            {/* Μπορείς να το κρατήσεις ή να το αφαιρέσεις αν σου φτάνει το Χ πάνω δεξιά */}
             <button
               style={styles.closeChatButton}
               onClick={() => setShowMapModal(false)}
@@ -1240,7 +1246,10 @@ function TransactionCard({
                       onAccept();
                     }}
                   >
-                    <FaCheckCircle style={{ color: "#28a745", fontSize: "24px" }} /> Αποδοχή
+                    <FaCheckCircle
+                      style={{ color: "#28a745", fontSize: "24px" }}
+                    />{" "}
+                    Αποδοχή
                   </button>
 
                   <button
@@ -1285,7 +1294,10 @@ function TransactionCard({
                       </button>
                     ) : (
                       <p style={{ color: "#28a745" }}>
-                        <FaCheckCircle style={{ color: "#28a745", fontSize: "24px" }} /> Έχεις επιβεβαιώσει αποστολή
+                        <FaCheckCircle
+                          style={{ color: "#28a745", fontSize: "24px" }}
+                        />{" "}
+                        Έχεις επιβεβαιώσει αποστολή
                       </p>
                     )}
                   </div>
@@ -1307,7 +1319,10 @@ function TransactionCard({
                       </button>
                     ) : (
                       <p style={{ color: "#28a745" }}>
-                        <FaCheckCircle style={{ color: "#28a745", fontSize: "24px" }} /> Έχεις επιβεβαιώσει αποστολή
+                        <FaCheckCircle
+                          style={{ color: "#28a745", fontSize: "24px" }}
+                        />{" "}
+                        Έχεις επιβεβαιώσει αποστολή
                       </p>
                     )}
 
@@ -1325,7 +1340,10 @@ function TransactionCard({
 
                     {tx.owner_received && (
                       <p style={{ color: "#28a745" }}>
-                        <FaCheckCircle style={{ color: "#28a745", fontSize: "24px" }} /> Έχεις επιβεβαιώσει παραλαβή
+                        <FaCheckCircle
+                          style={{ color: "#28a745", fontSize: "24px" }}
+                        />{" "}
+                        Έχεις επιβεβαιώσει παραλαβή
                       </p>
                     )}
 
@@ -1631,7 +1649,10 @@ function OutgoingCard({
                       )}
                       {tx.requester_received && (
                         <p style={{ color: "#28a745" }}>
-                          <FaCheckCircle style={{ color: "#28a745", fontSize: "24px" }} /> Έχεις επιβεβαιώσει παραλαβή
+                          <FaCheckCircle
+                            style={{ color: "#28a745", fontSize: "24px" }}
+                          />{" "}
+                          Έχεις επιβεβαιώσει παραλαβή
                         </p>
                       )}
                       {tx.requester_received && (
@@ -1670,7 +1691,10 @@ function OutgoingCard({
                         </button>
                       ) : (
                         <p style={{ color: "#28a745" }}>
-                          <FaCheckCircle style={{ color: "#28a745", fontSize: "24px" }} /> Έχεις επιβεβαιώσει αποστολή
+                          <FaCheckCircle
+                            style={{ color: "#28a745", fontSize: "24px" }}
+                          />{" "}
+                          Έχεις επιβεβαιώσει αποστολή
                         </p>
                       )}
 
@@ -1688,7 +1712,10 @@ function OutgoingCard({
 
                       {tx.requester_received && (
                         <p style={{ color: "#28a745" }}>
-                          <FaCheckCircle style={{ color: "#28a745", fontSize: "24px" }} /> Έχεις επιβεβαιώσει παραλαβή
+                          <FaCheckCircle
+                            style={{ color: "#28a745", fontSize: "24px" }}
+                          />{" "}
+                          Έχεις επιβεβαιώσει παραλαβή
                         </p>
                       )}
 
@@ -1895,7 +1922,7 @@ const styles = {
     boxSizing: "border-box",
     scrollbarGutter: "stable",
     transition: "background 0.3s ease, min-height 0.3s ease",
-    minHeight: "100dvh", 
+    minHeight: "100dvh",
   },
   tabContainer: {
     display: "flex",
@@ -1927,9 +1954,9 @@ const styles = {
     border: "1.5px solid #a2d2a2",
     transition: "all 0.3s ease",
     cursor: "pointer",
-    margin: "0 auto 20px", 
-    width: "100%", 
-    maxWidth: "720px", 
+    margin: "0 auto 20px",
+    width: "100%",
+    maxWidth: "720px",
     color: "#1f3a1f",
   },
 
@@ -2163,7 +2190,7 @@ const styles = {
     borderRadius: "6px",
     cursor: "pointer",
     marginTop: "10px",
-    marginRight: "10px", 
+    marginRight: "10px",
   },
   headerBar: {
     background: "rgba(255,255,255,0.6)",

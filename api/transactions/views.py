@@ -10,6 +10,7 @@ from notifications.models import Notification
 import requests
 
 
+
 class TransactionViewSet(viewsets.ModelViewSet):
     """
     ViewSet για συναλλαγές (Ανταλλαγή / Δανεισμός)
@@ -91,11 +92,6 @@ class TransactionViewSet(viewsets.ModelViewSet):
         if existing_same_user:
             raise serializers.ValidationError({'error': 'Έχετε ήδη ενεργή αίτηση για αυτό το αντικείμενο.'})
 
-        active_for_item = Transaction.objects.filter(
-            item=item, status__in=['pending', 'accepted', 'pending_terms', 'pending_confirmation']
-        ).exists()
-        if active_for_item:
-            raise serializers.ValidationError({'error': 'Το αντικείμενο έχει ήδη ενεργή συναλλαγή.'})
 
         delivery_method = getattr(item, 'delivery_method', None)
 
@@ -174,6 +170,29 @@ class TransactionViewSet(viewsets.ModelViewSet):
             return Response({'error': 'Μη έγκυρη κατάσταση.'}, status=status.HTTP_400_BAD_REQUEST)
 
         if new_status in ['accepted', 'pending_terms']:
+            other_active = Transaction.objects.filter(
+                item=instance.item,
+                status__in=['accepted','pending_terms']
+            ).exclude(pk=instance.pk).exists()
+
+            if other_active:
+                return Response(
+                    {'error': 'Υπάρχει ήδη αποδεκτή συναλλαγή για αυτό το αντικείμενο.'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            if instance.transaction_type == 'exchange' and instance.requested_item:
+                other_active_requested = Transaction.objects.filter(
+                    Q(item=instance.requested_item) | Q(requested_item=instance.requested_item),
+                    status__in=['accepted', 'pending_terms']
+                    ).exclude(pk=instance.pk).exists()
+
+                if other_active_requested:
+                    return Response(
+                        {'error': 'Το αντικείμενο που προσφέρεις συμμετέχει ήδη σε αποδεκτή συναλλαγή.'},
+                        status=status.HTTP_400_BAD_REQUEST
+                         )
+
             if instance.transaction_type == 'loan':
                 start_date = data.get('start_date')
                 end_date = data.get('end_date')
@@ -181,8 +200,13 @@ class TransactionViewSet(viewsets.ModelViewSet):
                     return Response({'error': 'Πρέπει να δηλωθεί διάρκεια δανεισμού.'}, status=status.HTTP_400_BAD_REQUEST)
                 instance.start_date = start_date
                 instance.end_date = end_date
-                instance.item.available = False
-                instance.item.save()
+
+            instance.item.available = False
+            instance.item.save()
+
+            if instance.transaction_type == 'exchange' and instance.requested_item:
+                instance.requested_item.available = False
+                instance.requested_item.save()
 
             if data.get('terms'):
                 instance.terms = data['terms']
@@ -205,6 +229,36 @@ class TransactionViewSet(viewsets.ModelViewSet):
                 transaction=instance,
                 message=f"❌ Ο {user.username} απέρριψε το αίτημά σου για '{instance.item.title}'."
             )
+
+        elif new_status == 'cancelled':
+            instance.status = 'cancelled'
+
+            has_other_active_main = Transaction.objects.filter(
+                item=instance.item,
+                status__in=['accepted', 'pending_terms']
+                ).exclude(pk=instance.pk).exists()
+
+            if not has_other_active_main:
+                instance.item.available = True
+                instance.item.save()
+
+            if instance.transaction_type == 'exchange' and instance.requested_item:
+                has_other_active_req = Transaction.objects.filter(
+                    Q(item=instance.requested_item) | Q(requested_item=instance.requested_item),
+                    status__in=['accepted', 'pending_terms']
+                     ).exclude(pk=instance.pk).exists()
+
+                if not has_other_active_req:
+                    instance.requested_item.available = True
+                    instance.requested_item.save()
+
+            Notification.objects.create(
+                user=instance.requester,
+                sender=user,
+                transaction=instance,
+                message=f"ℹ️ Ο {user.username} ακύρωσε τη συναλλαγή."
+             )
+
 
         instance.save()
         serializer = self.get_serializer(instance)

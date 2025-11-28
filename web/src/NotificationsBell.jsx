@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useAuth } from "./context/AuthContext";
 import { useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
@@ -23,6 +23,9 @@ export default function NotificationsBell() {
   const [animate, setAnimate] = useState(false);
   const navigate = useNavigate();
 
+  const lastUnreadRef = useRef(0);
+  const lastUnreadMsgsRef = useRef(0);
+
   const fetchNotifications = async () => {
     if (!token) return;
     try {
@@ -42,11 +45,20 @@ export default function NotificationsBell() {
       const msgData = await resMsgs.json();
       const newMsgs = msgData.unread_count || 0;
 
-      if (newUnread > unreadCount || newMsgs > unreadMsgs) {
+      // 🔹 Βγάζουμε toast ΜΟΝΟ αν αυξήθηκαν σε σχέση με τις προηγούμενες τιμές
+      const hasNew =
+        newUnread > lastUnreadRef.current ||
+        newMsgs > lastUnreadMsgsRef.current;
+
+      if (hasNew) {
         setAnimate(true);
         toast.success("🔔 Νέα ειδοποίηση ή μήνυμα!");
         setTimeout(() => setAnimate(false), 2000);
       }
+
+      // 🔹 Ενημερώνουμε refs & state
+      lastUnreadRef.current = newUnread;
+      lastUnreadMsgsRef.current = newMsgs;
 
       setUnreadCount(newUnread);
       setUnreadMsgs(newMsgs);
@@ -153,7 +165,7 @@ export default function NotificationsBell() {
 
   return (
     <div style={styles.wrapper}>
-      {/* 🔔 Καμπάνα */}
+      {/* Καμπάνα */}
       <motion.button
         style={{
           ...styles.bellButton,
@@ -186,7 +198,7 @@ export default function NotificationsBell() {
         )}
       </motion.button>
 
-      {/* 🔽 Dropdown */}
+      {/* Dropdown */}
       <AnimatePresence>
         {open && (
           <motion.div

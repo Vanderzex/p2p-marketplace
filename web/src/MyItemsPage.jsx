@@ -20,16 +20,22 @@ export default function MyItemsPage() {
   const [showModal, setShowModal] = useState(false);
 
   useEffect(() => {
-    if (!token || !user) return;
+    if (!user) return;
 
     const fetchItems = async () => {
       try {
-        let url = "http://localhost:8000/api/items/";
-        let headers = { Authorization: `Bearer ${token}` };
+        let url;
+        let headers = {};
 
-        if (!isOwnProfile) {
+        if (isOwnProfile) {
+          // 👇 Δικό σου προφίλ → my_items
+          if (!token) return;
+          url = "http://localhost:8000/api/items/my_items/";
+          headers = { Authorization: `Bearer ${token}` };
+        } else {
+          // 👇 Άλλος χρήστης → of_user/<username>/ (βλέπουμε μόνο διαθέσιμα)
           url = `http://localhost:8000/api/items/of_user/${username}/`;
-          headers = {};
+          headers = token ? { Authorization: `Bearer ${token}` } : {};
         }
 
         const res = await fetch(url, { headers });
@@ -38,16 +44,8 @@ export default function MyItemsPage() {
         const data = await res.json();
         const results = Array.isArray(data) ? data : data.results || [];
 
-        const filtered = isOwnProfile
-          ? results.filter(
-              (item) =>
-                item.owner === user.username ||
-                item.owner_username === user.username ||
-                item.owner?.username === user.username
-            )
-          : results;
-
-        setItems(filtered);
+        // Δεν χρειάζεται άλλο client-side φιλτράρισμα
+        setItems(results);
       } catch (err) {
         console.error("Σφάλμα:", err);
         toast.error("⚠️ " + err.message);
@@ -378,7 +376,7 @@ const styles = {
     left: "12px",
     display: "flex",
     flexDirection: "column",
-    gap: "6px", 
+    gap: "6px",
   },
 
   badgeLoan: {
@@ -483,10 +481,10 @@ const styles = {
     maxWidth: "480px",
     width: "90%",
     position: "relative",
-    maxHeight: "90vh", 
-    overflowY: "auto", 
+    maxHeight: "90vh",
+    overflowY: "auto",
     overflowX: "hidden",
-    scrollbarWidth: "thin", 
+    scrollbarWidth: "thin",
     scrollbarColor: "#ccc #f8f8f8",
   },
 

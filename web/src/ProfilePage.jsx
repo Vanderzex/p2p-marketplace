@@ -17,6 +17,7 @@ export default function ProfilePage() {
   const [uploadingImage, setUploadingImage] = useState(false);
   const [showChat, setShowChat] = useState(false);
   const [chatUser, setChatUser] = useState(null);
+  const [showImageForm, setShowImageForm] = useState(false);
 
   const isOwnProfile = !id || Number(id) === user?.id;
 
@@ -119,7 +120,11 @@ export default function ProfilePage() {
 
   // Upload φωτογραφίας προφίλ (μόνιμη αποθήκευση)
   const handleImageUpload = async () => {
-    if (!profileImage) return toast.error("Επίλεξε πρώτα μια εικόνα.");
+    if (!profileImage) {
+      toast.error("Επίλεξε πρώτα μια εικόνα.");
+      return;
+    }
+
     setUploadingImage(true);
 
     const formData = new FormData();
@@ -138,12 +143,15 @@ export default function ProfilePage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Σφάλμα αποστολής εικόνας");
 
-      // χρησιμοποιεί το URL από το backend
       toast.success("✅ Φωτογραφία αποθηκεύτηκε επιτυχώς!");
+
       setProfile((prev) => ({
         ...prev,
-        profile_image_url: data.profile_image,
+        profile_image_url: data.profile_image, //
       }));
+
+      setProfileImage(null);
+      setShowImageForm(false);
     } catch (err) {
       toast.error("Σφάλμα: " + err.message);
     } finally {
@@ -172,8 +180,10 @@ export default function ProfilePage() {
   }
 
   // Υπολογισμός θετικών αξιολογήσεων
-  const totalReviews = reviews.length;
-  const positive = reviews.filter((r) => r.rating >= 4).length;
+  const safeReviews = Array.isArray(reviews) ? reviews : [];
+
+  const totalReviews = safeReviews.length;
+  const positive = safeReviews.filter((r) => r.rating >= 4).length;
   const positivePercent =
     totalReviews > 0 ? Math.round((positive / totalReviews) * 100) : 0;
 
@@ -248,14 +258,15 @@ export default function ProfilePage() {
                 display: "flex",
                 flexDirection: "column",
                 alignItems: "center",
-                marginTop: "-10px", 
+                marginTop: "-10px",
                 marginBottom: "10px",
-                gap: "4px",
+                gap: "6px",
               }}
             >
-              {!profileImage || profileImage === "UPLOADED" ? (
+              {/* 1ο βήμα: κουμπί "Επιλογή εικόνας" */}
+              {!showImageForm && (
                 <button
-                  onClick={() => setProfileImage("PENDING")}
+                  onClick={() => setShowImageForm(true)}
                   style={{
                     ...styles.link,
                     background: "#007bff",
@@ -270,33 +281,51 @@ export default function ProfilePage() {
                     ? "Αλλαγή Εικόνας"
                     : "Ανέβασμα Εικόνας"}
                 </button>
-              ) : null}
+              )}
 
-              {profileImage === "PENDING" && (
+              {/* 2ο βήμα: μόλις πατηθεί, εμφανίζεται input + αποθήκευση + ακύρωση */}
+              {showImageForm && (
                 <>
                   <input
                     type="file"
                     accept="image/*"
-                    onChange={(e) => setProfileImage(e.target.files[0])}
+                    onChange={(e) => setProfileImage(e.target.files[0] || null)}
                   />
+
                   <button
-                    onClick={async () => {
-                      if (!profileImage || profileImage === "PENDING") {
-                        setProfileImage("UPLOADED");
-                        return;
-                      }
-                      await handleImageUpload();
-                      setProfileImage("UPLOADED");
-                    }}
-                    disabled={uploadingImage}
+                    onClick={handleImageUpload}
+                    disabled={uploadingImage || !profileImage}
                     style={{
                       ...styles.link,
                       background: uploadingImage ? "#6c757d" : "#28a745",
                       marginTop: "6px",
                       color: "white",
+                      padding: "6px 12px",
+                      borderRadius: "8px",
+                      boxShadow: "0 2px 6px rgba(0,0,0,0.1)",
+                      cursor:
+                        uploadingImage || !profileImage
+                          ? "not-allowed"
+                          : "pointer",
+                      opacity: uploadingImage || !profileImage ? 0.8 : 1,
                     }}
                   >
-                    {uploadingImage ? "Ανέβασμα..." : "✅ Επιβεβαίωση"}
+                    {uploadingImage ? "Ανέβασμα..." : "✅ Αποθήκευση εικόνας"}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowImageForm(false);
+                      setProfileImage(null);
+                    }}
+                    style={{
+                      ...styles.link,
+                      fontSize: "0.8rem",
+                      color: "#555",
+                    }}
+                  >
+                    Ακύρωση
                   </button>
                 </>
               )}
@@ -325,17 +354,13 @@ export default function ProfilePage() {
               <strong>Τοποθεσία:</strong>{" "}
               <span style={{ color: "#007bff", fontWeight: "bold" }}>
                 {profile.location_name || "Άγνωστη περιοχή"}
-              </span>{" "}
-              <small style={{ color: "#666" }}>
-                ({profile.latitude.toFixed(4)}, {profile.longitude.toFixed(4)})
-              </small>
+              </span>
             </p>
           ) : (
             <p style={{ marginTop: "10px", color: "#888" }}>
               <strong>Τοποθεσία:</strong> — Δεν έχει οριστεί
             </p>
           )}
-
 
           {profile && (
             <>
@@ -418,9 +443,10 @@ export default function ProfilePage() {
           ) : reviews.length === 0 ? (
             <p>Δεν υπάρχουν αξιολογήσεις.</p>
           ) : (
-            reviews
+            safeReviews
               .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
               .slice(0, 5)
+
               .map((r, i) => (
                 <motion.div
                   key={r.id}
@@ -460,7 +486,7 @@ export default function ProfilePage() {
               ))
           )}
 
-          {reviews.length > 0 && (
+          {safeReviews.length > 0 && (
             <Link
               to={`/user-reviews/${id || user.id}`}
               style={styles.modernBtnSecondarySmall}
@@ -616,8 +642,8 @@ const styles = {
     padding: "30px 40px",
     boxShadow: "0 8px 24px rgba(0,0,0,0.08)",
     width: "100%",
-    maxWidth: "850px", 
-    marginBottom: "30px", 
+    maxWidth: "850px",
+    marginBottom: "30px",
     display: "grid",
     gridTemplateColumns: "1fr 1fr",
     gap: "25px",

@@ -16,10 +16,8 @@ class User(AbstractUser):
         default=0, verbose_name="Ολοκληρωμένες Συναλλαγές"
     )
 
-    # Προαιρετικά: σύντομο bio για τη σελίδα προφίλ
     bio = models.TextField(blank=True, null=True, verbose_name="Περιγραφή χρήστη")
 
-    # Προαιρετικά: εικόνα προφίλ
     profile_image = models.ImageField(
         upload_to="profile_images/",
         blank=True,

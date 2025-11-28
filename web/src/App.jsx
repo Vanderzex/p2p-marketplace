@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Routes, Route, Link } from "react-router-dom";
 import { Toaster } from "react-hot-toast";
 import toast from "react-hot-toast";
+import { useNavigate } from "react-router-dom";
 
 import AddItemForm from "./AddItemForm";
 import ItemDetails from "./ItemDetails";
@@ -539,6 +540,8 @@ function HomePage({
 
   const location = useLocation();
   const [resetting, setResetting] = useState(false);
+
+  const navigate = useNavigate();
 
   useEffect(() => {
     // Πλήρες reset σελίδας όταν ζητηθεί (π.χ. logo ή επιστροφή)
@@ -1111,12 +1114,15 @@ function HomePage({
                           )}
                         </div>
 
-                        {/* 👤 Πληροφορίες χρήστη */}
+                        {/* Πληροφορίες χρήστη */}
                         <div style={styles.resultUser}>
-                          <Link
-                            to={`/profile/${item.owner_id}`} // χρησιμοποιεί το id
-                            style={styles.userLink}
-                            onClick={(e) => e.stopPropagation()} // αποτρέπει το click από το να ανοίγει το item
+                          <span
+                            style={{ ...styles.userLink, cursor: "pointer" }} 
+                            onClick={(e) => {
+                              e.preventDefault(); 
+                              e.stopPropagation(); 
+                              navigate(`/profile/${item.owner_id}`);
+                            }}
                           >
                             <img
                               src={
@@ -1132,7 +1138,7 @@ function HomePage({
                             <span style={styles.userName}>
                               {item.owner_username}
                             </span>
-                          </Link>
+                          </span>
                         </div>
                       </div>
                     </Link>
